@@ -3,7 +3,7 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/ソリューション項目/">
-    <File Path=".editorcon" />
+    <File Path=".editorconfig" />
   </Folder>
   <Project Path="TanakaEngine.vcxproj" Id="86d1af2a-f356-42d4-9021-3d80de84b638" />
 </Solution>
