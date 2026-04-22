@@ -1,5 +1,10 @@
 #include <Windows.h>
 #include <cstdint>
+#include <string>
+#include <format>
+#include <filesystem>
+#include <fstream>
+#include<chrono>
 
 // クライアント領域のサイズ
 const int32_t kClientWidth = 1280;
@@ -21,9 +26,77 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
+// ログファイル作成関数
+void CreateLogFile() {
+	// 現在時刻の取得(UTC時刻)
+	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+
+	// コンマ秒を削る
+	std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds> nowSeconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
+
+	// 日本時間に変換
+	std::chrono::zoned_time localTime{std::chrono::current_zone(), nowSeconds};
+
+	// formatを使って年月日_時分秒の文字列に変換
+	std::string dateString = std::format("{:%Y%m%d_%H%M%S}", localTime);
+
+	// 時刻を使ってファイル名を決定
+	std::string logFilePath = std::string("logs/") + dateString + ".log";
+
+	// ファイルを作って書き込み準備
+	std::ofstream logStream(logFilePath);
+}
+
+
+// デバッグ用のログ出力関数
+void Log(std::ostream& os, const std::string& message) {
+	os << message << std::endl;
+	OutputDebugStringA(message.c_str());
+}
+
+// stringからwstringへの変換関数
+std::wstring ConvertString(const std::string &str) {
+	if (str.empty()) {
+		return std::wstring();
+	}
+
+	auto sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char *>(&str[0]), static_cast<int>(str.size()), NULL, 0);
+
+	if (sizeNeeded == 0) {
+		return std::wstring();
+	}
+
+	std::wstring result(sizeNeeded, 0);
+
+	MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char *>(&str[0]), static_cast<int>(str.size()), &result[0], sizeNeeded);
+
+	return result;
+}
+
+// wstringからstringへの変換関数
+std::string ConvertString(const std::wstring &str) {
+	if (str.empty()) {
+		return std::string();
+	}
+
+	auto sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), NULL, 0, NULL, NULL);
+
+	if (sizeNeeded == 0) {
+		return std::string();
+	}
+
+	std::string result(sizeNeeded, 0);
+	WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), result.data(), sizeNeeded, NULL, NULL);
+
+	return result;
+}
+
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
+
+	// ログファイルの作成
+	CreateLogFile();
 
 	// ウィンドウサイズを表す構造体にクライアント領域を入れる
 	WNDCLASS wc{};
@@ -66,9 +139,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ウィンドウを表示する
 	ShowWindow(hwnd, SW_SHOW);
 
-	// 出力ウィンドウへの文字出力
-	OutputDebugStringA("Hello,DirectX!\n");
-
 	MSG msg{};
 
 	// ウィンドウのバツボタンが押されるまでループ
@@ -81,6 +151,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// ゲームの処理
 		}
 	}
+
+
 
 	return 0;
 }
