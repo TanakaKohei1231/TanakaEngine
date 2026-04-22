@@ -5,6 +5,12 @@
 #include <filesystem>
 #include <fstream>
 #include<chrono>
+#include <d3d12.h>
+#include <dxgi1_6.h>
+#include <cassert>
+
+#pragma comment(lib, "d3d12.lib")
+#pragma comment(lib, "dxgi.lib")
 
 // クライアント領域のサイズ
 const int32_t kClientWidth = 1280;
@@ -27,7 +33,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 // ログファイル作成関数
-void CreateLogFile() {
+std::ofstream CreateLogFile() {
 	// 現在時刻の取得(UTC時刻)
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
@@ -45,6 +51,8 @@ void CreateLogFile() {
 
 	// ファイルを作って書き込み準備
 	std::ofstream logStream(logFilePath);
+
+	return logStream;
 }
 
 
@@ -96,7 +104,7 @@ std::string ConvertString(const std::wstring &str) {
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// ログファイルの作成
-	CreateLogFile();
+	std::ofstream log = CreateLogFile();
 
 	// ウィンドウサイズを表す構造体にクライアント領域を入れる
 	WNDCLASS wc{};
@@ -152,7 +160,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		}
 	}
 
-
+	Log(log, ConvertString(std::format(L"\nlog\n")));
 
 	return 0;
 }
