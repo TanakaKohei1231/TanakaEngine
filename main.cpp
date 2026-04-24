@@ -34,6 +34,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 // ログファイル作成関数
 std::ofstream CreateLogFile() {
+	// ログのディレクトリを用意
+	std::filesystem::create_directory("logs");
+
 	// 現在時刻の取得(UTC時刻)
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
