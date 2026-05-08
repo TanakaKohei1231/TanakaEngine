@@ -214,6 +214,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		}
 
 		// ソフトウェアアダプタは見なかったことにする
+		useAdapter->Release();
 		useAdapter = nullptr;
 	}
 
@@ -274,6 +275,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	}
 
 	Log(log, ConvertString(std::format(L"\nlog\n")));
+
+	// DirectX12関連のCOMオブジェクトを解放する
+	if (device != nullptr) {
+		device->Release();
+		device = nullptr;
+	}
+
+	if (useAdapter != nullptr) {
+		useAdapter->Release();
+		useAdapter = nullptr;
+	}
+
+	if (dxgiFactory != nullptr) {
+		dxgiFactory->Release();
+		dxgiFactory = nullptr;
+	}
 
 	return 0;
 }
