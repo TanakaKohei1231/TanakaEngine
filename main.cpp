@@ -119,16 +119,16 @@ static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception){
 
 	// processIDとクラッシュの発生したthreadIDを取得
 	DWORD processId = GetCurrentProcessId();
-	DWORD threadId = GetCurrentThreadId();	
+	DWORD threadId = GetCurrentThreadId();
 
 	// 設定情報を入力
-	MINIDUMP_EXCEPTION_INFORMATION minidumpInfomation{0};
-	minidumpInfomation.ThreadId = threadId;
-	minidumpInfomation.ExceptionPointers = exception;
-	minidumpInfomation.ClientPointers = TRUE;
+	MINIDUMP_EXCEPTION_INFORMATION minidumpInformation{0};
+	minidumpInformation.ThreadId = threadId;
+	minidumpInformation.ExceptionPointers = exception;
+	minidumpInformation.ClientPointers = TRUE;
 
 	// Dumpの出力。minidumpNormalは必要最低限の情報を出力するフラグ
-	MiniDumpWriteDump(GetCurrentProcess(), processId, dumpFileHandle, MiniDumpNormal, &minidumpInfomation, nullptr, nullptr);
+	MiniDumpWriteDump(GetCurrentProcess(), processId, dumpFileHandle, MiniDumpNormal, &minidumpInformation, nullptr, nullptr);
 
 	// 他に関連付けられているSEH例外ハンドラがあれば実行。通常はプロセスを終了する
 	return EXCEPTION_EXECUTE_HANDLER;
@@ -181,6 +181,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		wc.hInstance, // インスタンスハンドル
 		nullptr                 // オプション
 	);
+
+	#ifdef _DEBUG
+
+	ID3D12Debug1 *debugController = nullptr;
+
+	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
+		// デバッグレイヤーを有効化する
+		debugController->EnableDebugLayer();
+
+		// さらにGPU側でもチェックを行うようにする
+		debugController->SetEnableGPUBasedValidation(TRUE);
+	}
+
+	#endif // _DEBUG
+
 
 	// ウィンドウを表示する
 	ShowWindow(hwnd, SW_SHOW);
@@ -254,6 +269,45 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// デバイスの生成に成功したのでログに出す
 	Log(log, "Complete create D3D12Device!!\n");
+
+	#ifdef _DEBUG
+
+	ID3D12InfoQueue *infoQueue = nullptr;
+
+	if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&infoQueue)))) {
+		// ヤバいエラー時に止まる
+		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
+
+		// エラー時に止まる
+		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+
+		// 警告時に止まる
+		infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
+
+		// 抑制するメッセージのID
+		D3D12_MESSAGE_ID denyIds[] = {
+			// Windows11でのDXGIデバッグレイヤーとDX12デバッグレイヤーの相性作用バグによるエラーメッセージ
+			D3D12_MESSAGE_ID_RESOURCE_BARRIER_MISMATCHING_COMMAND_LIST_TYPE
+		};
+
+		// 抑制するレベル
+		D3D12_MESSAGE_SEVERITY severities[] = {D3D12_MESSAGE_SEVERITY_INFO};
+		D3D12_INFO_QUEUE_FILTER filter{};
+		filter.DenyList.NumIDs = _countof(denyIds);
+		filter.DenyList.pIDList = denyIds;
+		filter.DenyList.NumSeverities = _countof(severities);
+		filter.DenyList.pSeverityList = severities;
+
+		// 指定したメッセージの表示を抑制する
+		infoQueue->PushStorageFilter(&filter);
+
+		// 開放
+		infoQueue->Release();
+	}
+
+	#endif // _DEBUG
+
+
 
 
 	// コマンドキューの生成
