@@ -10,11 +10,13 @@
 #include <cassert>
 #include <dbghelp.h>
 #include <strsafe.h>
+#include <dxgidebug.h>
 
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "Dbghelp.lib")
+#pragma comment(lib, "dxguid.lib")
 
 // クライアント領域のサイズ
 const int32_t kClientWidth = 1280;
@@ -308,8 +310,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	#endif // _DEBUG
 
 
-
-
 	// コマンドキューの生成
 	ID3D12CommandQueue *commandQueue = nullptr;
 	D3D12_COMMAND_QUEUE_DESC commandQueueDesc{};
@@ -490,6 +490,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	Log(log, ConvertString(std::format(L"\nlog\n")));
 
+
+	CloseHandle(fenceEvent);
+	fence->Release();
+	rtvDescriptorHeap->Release();
+	swapChainResources[0]->Release();
+	swapChainResources[1]->Release();
+	swapChain->Release();
+	commandList->Release();
+	commandAllocator->Release();
+	commandQueue->Release();
+
 	// DirectX12関連のCOMオブジェクトを解放する
 	if (device != nullptr) {
 		device->Release();
@@ -504,6 +515,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	if (dxgiFactory != nullptr) {
 		dxgiFactory->Release();
 		dxgiFactory = nullptr;
+	}
+
+	#ifdef _DEBUG
+		debugController->Release();
+	#endif // _DEBUG
+	CloseWindow(hwnd);
+
+	// リソースリークチェック
+	IDXGIDebug1 *debug;
+	if (SUCCEEDED(DXGIGetDebugInterface1(0,IID_PPV_ARGS(&debug)))) {
+		debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+		debug->ReportLiveObjects(DXGI_DEBUG_APP, DXGI_DEBUG_RLO_ALL);
+		debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
+		debug->Release();
 	}
 
 	return 0;
