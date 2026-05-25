@@ -209,6 +209,44 @@ IDxcBlob *CompileShader(const std::wstring &filePath, const wchar_t *profile, ID
 }
 
 
+ID3D12Resource *CreateBufferResource(ID3D12Device *device, size_t sizeInBytes) {
+
+	assert(device != nullptr);
+
+	// 頂点リソース用のヒープの設定
+	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
+	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+	// リソースの設定
+	D3D12_RESOURCE_DESC resourceDesc{};
+
+	// バッファリソースであることを示す
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+
+	// リソースのサイズ
+	resourceDesc.Width = sizeInBytes;
+
+	// バッファの場合はこれで固定
+	resourceDesc.Height = 1;
+	resourceDesc.DepthOrArraySize = 1;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+	// 実際にリソースを作る
+	ID3D12Resource *resource = nullptr;
+
+	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc,
+	                                             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&resource));
+
+	assert(SUCCEEDED(hr));
+
+	return resource;
+}
+
+
+
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
@@ -492,6 +530,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
+	// RootParameter作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
+	D3D12_ROOT_PARAMETER rootParameters[1] = {};
+	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // 定数バッファビュー
+	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // ピクセルシェーダーで見えるようにする
+	rootParameters[0].Descriptor.ShaderRegister = 0;                    // b0の0と一致する。もしb11だったら11にする
+	descriptionRootSignature.pParameters = rootParameters;              // RootParameterの配列へのポインタ
+	descriptionRootSignature.NumParameters = _countof(rootParameters);  // RootParameterの数
+
 	// シリアライズして	バイナリにする
 	ID3DBlob *signatureBlob = nullptr;
 	ID3DBlob *errorBlob = nullptr;
@@ -562,34 +608,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
 
+	// 頂点リソースを作る
+	ID3D12Resource *vertexResource = CreateBufferResource(device, sizeof(Vector4) * 3);
 
-	// 頂点リソース用のヒープの設定
-	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
-	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
-	
-	// 頂点リソースの設定
-	D3D12_RESOURCE_DESC vertexResourceDesc{};
-	// バッファリソースであることを示す
-	vertexResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	vertexResourceDesc.Width = sizeof(Vector4) * 3; // 頂点1つあたり4要素(x,y,z,w)で、3頂点分
-	// 1つの頂点バッファなので高さは1
-	vertexResourceDesc.Height = 1;
-	vertexResourceDesc.DepthOrArraySize = 1;
-	vertexResourceDesc.MipLevels = 1;
-	vertexResourceDesc.SampleDesc.Count = 1;
-	vertexResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR; // 行優先のメモリレイアウト
-	// 実際に頂点リソースを作る
-	ID3D12Resource *vertexResource = nullptr;
-	hr = device->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&vertexResourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ, // アップロードヒープはGenericReadで使う
-		nullptr,
-		IID_PPV_ARGS(&vertexResource)
-	);
+	// マテリアル用のリソースを作る。今回はcolorを1つ分のサイズを用意する
+	ID3D12Resource *materialResource = CreateBufferResource(device, sizeof(Vector4) * 3);
 
-	assert(SUCCEEDED(hr));
+	// マテリアルにデータを書き込む。
+	Vector4 *materialData = nullptr;
+
+	// 書き込むためのアドレスを取得
+	materialResource->Map(0, nullptr, reinterpret_cast<void **>(&materialData));
+
+	// 今回は赤を書き込んでみる
+	*materialData = {1.0f, 0.0f, 0.0f, 1.0f};
 
 	// 頂点バッファビューを作成
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
@@ -691,6 +723,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// 形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+			// マテリアルCBufferの場所を設定
+			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
+
 			// 描画！(DrawCall/ドローコール)。3頂点で1つのインスタンス。インスタンスについては今後
 			commandList->DrawInstanced(3, 1, 0, 0);
 
@@ -754,6 +789,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	commandList->Release();
 	commandAllocator->Release();
 	commandQueue->Release();
+	materialResource->Release();
 
 	// DirectX12関連のCOMオブジェクトを解放する
 	if (device != nullptr) {
