@@ -12,6 +12,7 @@
 #include <strsafe.h>
 #include <dxgidebug.h>
 #include <dxcapi.h>
+#include"Matrix4x4.h"
 
 
 #pragma comment(lib, "d3d12.lib")
@@ -530,11 +531,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-	// RootParameter作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
-	D3D12_ROOT_PARAMETER rootParameters[1] = {};
+	// RootParameter作成。PixelShaderのmaterialとVertexShaderのTransform
+	D3D12_ROOT_PARAMETER rootParameters[2] = {};
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // 定数バッファビュー
 	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // ピクセルシェーダーで見えるようにする
 	rootParameters[0].Descriptor.ShaderRegister = 0;                    // b0の0と一致する。もしb11だったら11にする
+
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // 定数バッファビュー
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // 頂点シェーダーで見えるようにする
+	rootParameters[1].Descriptor.ShaderRegister = 0;                    // b0の0と一致する。もしb11だったら11にする
+	
 	descriptionRootSignature.pParameters = rootParameters;              // RootParameterの配列へのポインタ
 	descriptionRootSignature.NumParameters = _countof(rootParameters);  // RootParameterの数
 
@@ -623,6 +629,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 今回は赤を書き込んでみる
 	*materialData = {1.0f, 0.0f, 0.0f, 1.0f};
 
+	// WVP用のリソースを作る。Matrix4x4を1つ分のサイズを用意する
+	ID3D12Resource *wvpResource = CreateBufferResource(device, sizeof(Matrix4x4));
+
+	// データを書き込む
+	Matrix4x4 *wvpData = nullptr;
+
+	// 書き込むためのアドレスを取得
+	wvpResource->Map(0, nullptr, reinterpret_cast<void **>(&wvpData));
+
+	// 単位行列を書き込む
+	*wvpData = Matrix4x4::MakeIdentity4x4();
+
 	// 頂点バッファビューを作成
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
 	// 頂点リソースの先頭を指す
@@ -663,6 +681,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 	// ===========================================================
+	// ゲーム用変数の宣言
+	// ===========================================================
+
+	Transform transform = {};
+	transform.scale = {1.0f, 1.0f, 1.0f};
+
+
+	// ===========================================================
 	// メインループ
 	// ===========================================================
 
@@ -673,7 +699,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		} else {
-			// ゲームの処理
+
+			// ===========================================================
+			// ここからゲームの処理
+			// ===========================================================
+
+
+			transform.rotate.y += 0.03f;
+			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
+			*wvpData = worldMatrix;
+
+
+			// ===========================================================
+			// ここまでゲームの処理
+			// ===========================================================
+
 
 			// 次フレーム用のコマンドリストを準備
 			hr = commandAllocator->Reset();
@@ -726,6 +766,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// マテリアルCBufferの場所を設定
 			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
 
+			// WVP用のCBufferの場所を設定
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());
+
 			// 描画！(DrawCall/ドローコール)。3頂点で1つのインスタンス。インスタンスについては今後
 			commandList->DrawInstanced(3, 1, 0, 0);
 
@@ -772,6 +815,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 	CloseHandle(fenceEvent);
+	wvpResource->Release();
+	materialResource->Release();
 	vertexResource->Release();
 	graphicsPipelineState->Release();
 	signatureBlob->Release();
@@ -789,7 +834,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	commandList->Release();
 	commandAllocator->Release();
 	commandQueue->Release();
-	materialResource->Release();
 
 	// DirectX12関連のCOMオブジェクトを解放する
 	if (device != nullptr) {
