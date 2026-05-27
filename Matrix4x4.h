@@ -29,7 +29,7 @@ class Matrix4x4 {
 	// 単位行列の生成
 	static Matrix4x4 MakeIdentity4x4();
 
-	static Vector3 Transform(const Vector3 &v, const Matrix4x4 &m);
+	static Vector3 TransformCoord(const Vector3 &v, const Matrix4x4 &m);
 
 	// 平行移動行列の生成
 	static Matrix4x4 MakeTranslateMatrix(const Vector3 &translation);
@@ -57,6 +57,10 @@ class Matrix4x4 {
 
 	// アフィン行列の生成
 	static Matrix4x4 MakeAffineMatrix(const Vector3 &scale, const Vector3 &rotate, const Vector3 &translate);
+	static Matrix4x4 MakeAffineMatrix(const Transform &transform);
+
+	// 透視投影行列の生成
+	static Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip);
 
   private:
 	static const int kColumnWidth = 60;

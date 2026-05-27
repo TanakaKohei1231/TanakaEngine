@@ -680,12 +680,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	scissorRect.bottom = kClientHeight;
 
 
+
+
 	// ===========================================================
 	// ゲーム用変数の宣言
 	// ===========================================================
 
 	Transform transform = {};
 	transform.scale = {1.0f, 1.0f, 1.0f};
+
+	Transform cameraTransform = {};
+	cameraTransform.scale = {1.0f, 1.0f, 1.0f};
+
+	// zが+の方向を向くカメラ
+	cameraTransform.translate.z = -5.0f;
+
+	Matrix4x4 projectionMatrix = Matrix4x4::MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
 
 
 	// ===========================================================
@@ -706,8 +716,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 			transform.rotate.y += 0.03f;
-			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
-			*wvpData = worldMatrix;
+
+			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(transform);
+			Matrix4x4 cameraMatrix = Matrix4x4::MakeAffineMatrix(cameraTransform);
+			Matrix4x4 viewMatrix = Matrix4x4::Inverse(cameraMatrix);
+			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, Matrix4x4::Multiply(viewMatrix, projectionMatrix));
+
+			*wvpData = worldViewProjectionMatrix;
 
 
 			// ===========================================================

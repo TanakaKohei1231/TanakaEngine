@@ -179,7 +179,7 @@ Matrix4x4 Matrix4x4::MakeIdentity4x4() {
 }
 
 
-Vector3 Matrix4x4::Transform(const Vector3& v, const Matrix4x4& m) {
+Vector3 Matrix4x4::TransformCoord(const Vector3& v, const Matrix4x4& m) {
 	Vector3 result{};
 
 	float w = 0.0f;
@@ -248,4 +248,26 @@ Matrix4x4 Matrix4x4::MakeAffineMatrix(const Vector3 &scale, const Vector3 &rotat
 	Matrix4x4 rotateMatrix = MakeRotateXYZMatrix(rotate);
 	Matrix4x4 translateMatrix = MakeTranslateMatrix(translate);
 	return Multiply(scaleMatrix, Multiply(rotateMatrix, translateMatrix));
+}
+
+Matrix4x4 Matrix4x4::MakeAffineMatrix(const Transform &transform) {
+	Matrix4x4 scaleMatrix = MakeScaleMatrix(transform.scale);
+	Matrix4x4 rotateMatrix = MakeRotateXYZMatrix(transform.rotate);
+	Matrix4x4 translateMatrix = MakeTranslateMatrix(transform.translate);
+	return Multiply(scaleMatrix, Multiply(rotateMatrix, translateMatrix));
+}
+
+Matrix4x4 Matrix4x4::MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
+	Matrix4x4 result{};
+
+	float cot = 1.0f / std::tan(fovY / 2.0f);
+
+	result.m_[0][0] = cot / aspectRatio;
+	result.m_[1][1] = cot;
+	result.m_[2][2] = farClip / (farClip - nearClip);
+	result.m_[2][3] = 1.0f;
+	result.m_[3][2] = (-nearClip * farClip) / (farClip - nearClip);
+	result.m_[3][3] = 0.0f;
+
+	return result;
 }
