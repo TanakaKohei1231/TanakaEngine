@@ -773,8 +773,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			#ifdef USE_IMGUI
 
-			Imgui_ImplDX12_NewFrame();
-			Imgui_ImplWin32_NewFrame();
+			ImGui_ImplDX12_NewFrame();
+			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 
 			#endif // USE_IMGUI
@@ -896,7 +896,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			#ifdef USE_IMGUI
 
 			// 実際のcommandListのImGuiの描画コマンドを積む
-			Imgui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
 
 			#endif // USE_IMGUI
 
