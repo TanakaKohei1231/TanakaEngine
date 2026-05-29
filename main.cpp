@@ -21,6 +21,17 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 
+#ifdef USE_IMGUI
+
+#include"externals/imgui/imgui.h"
+#include"externals/imgui/imgui_impl_dx12.h"
+#include"externals/imgui/imgui_impl_win32.h"
+
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+#endif // USE_IMGUI
+
+
 // クライアント領域のサイズ
 const int32_t kClientWidth = 1280;
 const int32_t kClientHeight = 720;
@@ -33,6 +44,15 @@ struct Vector4 {
 
 // ウィンドウプロシージャ
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+
+	#ifdef USE_IMGUI
+
+	if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) {
+		return true;
+	}
+
+	#endif // USE_IMGUI
+
 	switch (msg) {
 		// ウィンドウが破棄された
 	case WM_DESTROY:
@@ -243,6 +263,23 @@ ID3D12Resource *CreateBufferResource(ID3D12Device *device, size_t sizeInBytes) {
 	assert(SUCCEEDED(hr));
 
 	return resource;
+}
+
+
+ID3D12DescriptorHeap *CreatDescriptorHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
+
+	ID3D12DescriptorHeap *descriptorHeap = nullptr;
+	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
+	descriptorHeapDesc.Type = heapType;
+	descriptorHeapDesc.NumDescriptors = numDescriptors;
+	descriptorHeapDesc.Flags = shaderVisible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+
+	HRESULT hr = device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&descriptorHeap));
+	
+	// ディスクリプタヒープの生成がうまくいかなかったら起動しない
+	assert(SUCCEEDED(hr));
+
+	return descriptorHeap;
 }
 
 
@@ -462,14 +499,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	assert(SUCCEEDED(hr));
 
 	// ディスクリプタヒープの生成
-	ID3D12DescriptorHeap *rtvDescriptorHeap = nullptr;
-	D3D12_DESCRIPTOR_HEAP_DESC rtvDescriptorHeapDesc{};
-	rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; // レンダーターゲットビュー用
-	rtvDescriptorHeapDesc.NumDescriptors = 2; // ダブルバッファ用に2つ
-	hr = device->CreateDescriptorHeap(&rtvDescriptorHeapDesc, IID_PPV_ARGS(&rtvDescriptorHeap));
+	// RTV用のヒープでディスクリプタの数は2。SRVはshader内で触るものではないので、shaderVisibleはfalse
+	ID3D12DescriptorHeap *rtvDescriptorHeap = CreatDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);
 
-	// ディスクリプタヒープの生成がうまくいかなかったら起動しない
-	assert(SUCCEEDED(hr));
+	// SRV用のヒープでディスクリプタの数は128。SRVはshader内で触るものなので、shaderVisibleはtrue
+	ID3D12DescriptorHeap *srvDescriptorHeap = CreatDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
 	// スワップチェーンからリソースを引っ張ってくる
 	ID3D12Resource *swapChainResources[2] = {nullptr};
@@ -683,6 +717,29 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 	// ===========================================================
+	// ImGuiの初期化
+	// ===========================================================
+
+	#ifdef USE_IMGUI
+
+
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGui::StyleColorsDark();
+	ImGui_ImplWin32_Init(hwnd);
+	ImGui_ImplDX12_Init(
+		device, swapChainDesc.BufferCount, rtvDesc.Format, srvDescriptorHeap,
+		srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+		srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart()
+	);
+	ImGuiIO &io = ImGui::GetIO();
+	io.Fonts->Build();
+
+	#endif // USE_IMGUI
+
+
+	// ===========================================================
 	// ゲーム用変数の宣言
 	// ===========================================================
 
@@ -711,8 +768,33 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		} else {
 
 			// ===========================================================
+			// ImGuiの準備
+			// ===========================================================
+
+			#ifdef USE_IMGUI
+
+			Imgui_ImplDX12_NewFrame();
+			Imgui_ImplWin32_NewFrame();
+			ImGui::NewFrame();
+
+			#endif // USE_IMGUI
+
+			// ===========================================================
 			// ここからゲームの処理
 			// ===========================================================
+
+
+			//
+			// 更新処理
+			//
+
+			#ifdef USE_IMGUI
+
+			// 開発用UIの処理。実際に開発用のUIを出す場合はここをゲーム固有の処理に置き換える
+			ImGui::ShowDemoWindow();
+
+			#endif // USE_IMGUI
+
 
 
 			transform.rotate.y += 0.03f;
@@ -723,6 +805,24 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, Matrix4x4::Multiply(viewMatrix, projectionMatrix));
 
 			*wvpData = worldViewProjectionMatrix;
+
+
+
+
+
+
+			#ifdef USE_IMGUI
+
+			// ImGuiの内部コマンドを生成する
+			ImGui::Render();
+
+			#endif // USE_IMGUI
+
+
+			//
+			// 更新処理終了
+			//
+
 
 
 			// ===========================================================
@@ -766,6 +866,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// 指定した色で画面全体をクリアする
 			float clearColor[] = {0.1f, 0.25f, 0.5f, 1.0f}; // 青っぽい色
 			commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
+
+			// 描画用DescriptorHeapの設定
+			ID3D12DescriptorHeap *descriptorHeaps[] = {srvDescriptorHeap};
+			commandList->SetDescriptorHeaps(1, descriptorHeaps);
+
 			commandList->RSSetViewports(1, &viewport); // Viewportを設定
 
 			commandList->RSSetScissorRects(1, &scissorRect); // Scissorを設定
@@ -786,6 +891,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			// 描画！(DrawCall/ドローコール)。3頂点で1つのインスタンス。インスタンスについては今後
 			commandList->DrawInstanced(3, 1, 0, 0);
+
+
+			#ifdef USE_IMGUI
+
+			// 実際のcommandListのImGuiの描画コマンドを積む
+			Imgui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+
+			#endif // USE_IMGUI
+
+
 
 			// 画面に描く処理は終わり、画面に映すので状態を遷移
 			// 今回はRenderTargetからPresentにする
@@ -826,6 +941,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		}
 	}
 
+	#ifdef USE_IMGUI
+
+	// ImGuiの終了処理
+	ImGui_ImplDX12_Shutdown();
+	ImGui_ImplWin32_Shutdown();
+	ImGui::DestroyContext();
+
+	#endif // USE_IMGUI
+
+
 	Log(log, ConvertString(std::format(L"\nlog\n")));
 
 
@@ -843,6 +968,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	vertexShaderBlob->Release();
 	fence->Release();
 	rtvDescriptorHeap->Release();
+	srvDescriptorHeap->Release();
 	swapChainResources[0]->Release();
 	swapChainResources[1]->Release();
 	swapChain->Release();
