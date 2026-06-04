@@ -269,13 +269,16 @@ ID3D12Resource *CreateBufferResource(ID3D12Device *device, size_t sizeInBytes) {
 	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc,
 	                                             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&resource));
 
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr)) {
+		assert(false);
+		return nullptr;
+	}
 
 	return resource;
 }
 
 
-ID3D12DescriptorHeap *CreatDescriptorHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
+ID3D12DescriptorHeap *CreateDescriptorHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
 
 	ID3D12DescriptorHeap *descriptorHeap = nullptr;
 	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
@@ -286,7 +289,10 @@ ID3D12DescriptorHeap *CreatDescriptorHeap(ID3D12Device *device, D3D12_DESCRIPTOR
 	HRESULT hr = device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&descriptorHeap));
 	
 	// ディスクリプタヒープの生成がうまくいかなかったら起動しない
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr)) {
+		assert(false);
+		return nullptr;
+	};
 
 	return descriptorHeap;
 }
@@ -337,7 +343,10 @@ ID3D12Resource *CreateTextureResource(ID3D12Device *device, const DirectX::TexMe
 			IID_PPV_ARGS(&resource)
 		);          // 作成するResourceポインタへのポインタ
 
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr)) {
+		assert(false);
+		return nullptr;
+	}
 
 	return resource;
 }
@@ -356,7 +365,11 @@ void UploadTextureData(ID3D12Resource *texture, const DirectX::ScratchImage &mip
 		                                         UINT(img->rowPitch),  // 1ラインサイズ
 		                                         UINT(img->slicePitch) // 1枚サイズ
 		);
-		assert(SUCCEEDED(hr));
+
+		if (FAILED(hr)) {
+			assert(false);
+			return;
+		}
 	}
 }
 
@@ -386,7 +399,10 @@ ID3D12Resource *CreateDepthStencilTextureResource(ID3D12Device *device, int32_t 
 	HRESULT hr =
 	    device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc,
 	                                    D3D12_RESOURCE_STATE_DEPTH_WRITE, &depthClearValue, IID_PPV_ARGS(&resource));
-	assert(SUCCEEDED(hr));
+	if (FAILED(hr)) {
+		assert(false);
+		return nullptr;
+	}
 
 	return resource;
 }
@@ -580,12 +596,23 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// コマンドアロケータの生成がうまくいかなかったら起動しない
 	assert(SUCCEEDED(hr));
 
+	if (FAILED(hr)) {
+		assert(false);
+		return -1;
+	}
+
 	// コマンドリストを生成する
 	ID3D12GraphicsCommandList *commandList = nullptr;
 	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, nullptr, IID_PPV_ARGS(&commandList));
 
+
 	// コマンドリストの生成がうまくいかなかったら起動しない
 	assert(SUCCEEDED(hr));
+
+	if (FAILED(hr)) {
+		assert(false);
+		return -1;
+	}
 
 	hr = commandList->Close();
 	assert(SUCCEEDED(hr));
@@ -607,13 +634,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// ディスクリプタヒープの生成
 	// RTV用のヒープでディスクリプタの数は2。SRVはshader内で触るものではないので、shaderVisibleはfalse
-	ID3D12DescriptorHeap *rtvDescriptorHeap = CreatDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);
+	ID3D12DescriptorHeap *rtvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);
 
 	// SRV用のヒープでディスクリプタの数は128。SRVはshader内で触るものなので、shaderVisibleはtrue
-	ID3D12DescriptorHeap *srvDescriptorHeap = CreatDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
+	ID3D12DescriptorHeap *srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
 	// DSV用のヒープでディスクリプタの数は1。DSVはShader内で触るものではないので、shaderVisibleはfalse
-	ID3D12DescriptorHeap *dsvDescriptorHeap = CreatDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
+	ID3D12DescriptorHeap *dsvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
 
 	// スワップチェーンからリソースを引っ張ってくる
 	ID3D12Resource *swapChainResources[2] = {nullptr};
