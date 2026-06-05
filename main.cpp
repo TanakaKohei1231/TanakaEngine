@@ -37,6 +37,9 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 const int32_t kClientWidth = 1280;
 const int32_t kClientHeight = 720;
 
+// 表示する三角形の数
+const int kTriangleCount = 2;
+
 struct Vector2 {
 	float x, y;
 };
@@ -854,16 +857,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	*materialData = {1.0f, 1.0f, 1.0f, 1.0f};
 
 	// WVP用のリソースを作る。Matrix4x4を1つ分のサイズを用意する
-	ID3D12Resource *wvpResource = CreateBufferResource(device, sizeof(Matrix4x4));
+	ID3D12Resource *wvpResources[kTriangleCount] = {};
+	Matrix4x4 *wvpDatas[kTriangleCount] = {};
 
-	// データを書き込む
-	Matrix4x4 *wvpData = nullptr;
 
-	// 書き込むためのアドレスを取得
-	wvpResource->Map(0, nullptr, reinterpret_cast<void **>(&wvpData));
+	for (int i = 0; i < kTriangleCount; ++i) {
+		// WVP用のリソースを作る。Matrix4x4を1つ分のサイズを用意する
+		wvpResources[i] = CreateBufferResource(device, sizeof(Matrix4x4));
 
-	// 単位行列を書き込む
-	*wvpData = Matrix4x4::MakeIdentity4x4();
+		// 書き込むためのアドレスを取得
+		wvpResources[i]->Map(0, nullptr, reinterpret_cast<void **>(&wvpDatas[i]));
+
+		// 単位行列を書き込む
+		*wvpDatas[i] = Matrix4x4::MakeIdentity4x4();
+	}
 
 	// 頂点バッファビューを作成
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
@@ -988,8 +995,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ゲーム用変数の宣言
 	// ===========================================================
 
-	Transform transform = {};
-	transform.scale = {1.0f, 1.0f, 1.0f};
+	Transform transforms[kTriangleCount] = {};
+
+	for (int i = 0; i < kTriangleCount; ++i) {
+		transforms[i].scale = {1.0f, 1.0f, 1.0f};
+	}
 
 	Transform cameraTransform = {};
 	cameraTransform.scale = {1.0f, 1.0f, 1.0f};
@@ -1042,9 +1052,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui::Begin("Texture Color");
 
 			ImGui::ColorEdit4("Material Color", &materialData->x);
-			ImGui::DragFloat3("Translate", &transform.translate.x, 0.01f);
-			ImGui::DragFloat3("Rotate", &transform.rotate.x, 0.01f);
-			ImGui::DragFloat3("Scale", &transform.scale.x, 0.01f);
+			if (ImGui::TreeNode("Triangle 0")) {
+				ImGui::DragFloat3("Translate##0", &transforms[0].translate.x, 0.01f);
+				ImGui::DragFloat3("Rotate##0", &transforms[0].rotate.x, 0.01f);
+				ImGui::DragFloat3("Scale##0", &transforms[0].scale.x, 0.01f);
+				ImGui::TreePop();
+			}
+
+			if (ImGui::TreeNode("Triangle 1")) {
+				ImGui::DragFloat3("Translate##1", &transforms[1].translate.x, 0.01f);
+				ImGui::DragFloat3("Rotate##1", &transforms[1].rotate.x, 0.01f);
+				ImGui::DragFloat3("Scale##1", &transforms[1].scale.x, 0.01f);
+				ImGui::TreePop();
+			}
 			ImGui::Combo("Texture", &selectedTextureIndex, textureFilePaths, kTextureCount);
 
 			ImGui::End();
@@ -1054,12 +1074,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 
-			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(transform);
 			Matrix4x4 cameraMatrix = Matrix4x4::MakeAffineMatrix(cameraTransform);
 			Matrix4x4 viewMatrix = Matrix4x4::Inverse(cameraMatrix);
-			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, Matrix4x4::Multiply(viewMatrix, projectionMatrix));
 
-			*wvpData = worldViewProjectionMatrix;
+			for (int i = 0; i < kTriangleCount; ++i) {
+				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(transforms[i]);
+				Matrix4x4 worldViewProjectionMatrix =
+				    Matrix4x4::Multiply(worldMatrix, Matrix4x4::Multiply(viewMatrix, projectionMatrix));
+
+				*wvpDatas[i] = worldViewProjectionMatrix;
+			}
 
 
 
@@ -1146,13 +1170,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
 
 			// WVP用のCBufferの場所を設定
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());
-
-			// SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である。
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandlesGPU[selectedTextureIndex]);
 
-			// 描画！(DrawCall/ドローコール)。6頂点で1つのインスタンス。インスタンスについては今後
-			commandList->DrawInstanced(6, 1, 0, 0);
+			// 1枚目
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResources[0]->GetGPUVirtualAddress());
+			commandList->DrawInstanced(3, 1, 0, 0);
+
+			// 2枚目
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResources[1]->GetGPUVirtualAddress());
+			commandList->DrawInstanced(3, 1, 3, 0);
 
 
 			#ifdef USE_IMGUI
@@ -1224,7 +1250,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		}
 	}
 	depthStencilResource->Release();
-	wvpResource->Release();
+	for (int i = 0; i < kTriangleCount; ++i) {
+		if (wvpResources[i] != nullptr) {
+			wvpResources[i]->Release();
+			wvpResources[i] = nullptr;
+		}
+	}
 	materialResource->Release();
 	vertexResource->Release();
 	graphicsPipelineState->Release();
