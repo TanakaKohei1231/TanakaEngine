@@ -1049,6 +1049,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui::Begin("Texture Color");
 
 			ImGui::ColorEdit4("Material Color", &materialData->x);
+			if (ImGui::TreeNode("Triangle")) {
+				ImGui::DragFloat3("Translate##0", &transform.translate.x, 0.01f);
+				ImGui::DragFloat3("Rotate##0", &transform.rotate.x, 0.01f);
+				ImGui::DragFloat3("Scale##0", &transform.scale.x, 0.01f);
+				ImGui::TreePop();
+			}
+
+			if (ImGui::TreeNode("Sprite")) {
+				ImGui::DragFloat3("Translate##0", &transformSprite.translate.x, 0.1f);
+				ImGui::DragFloat3("Rotate##0", &transformSprite.rotate.x, 0.01f);
+				ImGui::DragFloat3("Scale##0", &transformSprite.scale.x, 0.01f);
+				ImGui::TreePop();
+			}
 
 			ImGui::End();
 
