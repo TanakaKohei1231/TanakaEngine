@@ -271,3 +271,32 @@ Matrix4x4 Matrix4x4::MakePerspectiveFovMatrix(float fovY, float aspectRatio, flo
 
 	return result;
 }
+
+
+Matrix4x4 Matrix4x4::MakeOrthographicMatrix(float left, float top, float right, float bottom, float nearClip, float farClip) {
+	Matrix4x4 result{};
+
+	result.m_[0][0] = 2.0f / (right - left);
+	result.m_[1][1] = 2.0f / (top - bottom);
+	result.m_[2][2] = 1.0f / (farClip - nearClip);
+	result.m_[3][0] = (left + right) / (left - right);
+	result.m_[3][1] = (top + bottom) / (bottom - top);
+	result.m_[3][2] = nearClip / (nearClip - farClip);
+	result.m_[3][3] = 1.0f;
+
+	return result;
+}
+
+Matrix4x4 Matrix4x4::MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
+	Matrix4x4 result{};
+
+	result.m_[0][0] = width / 2.0f;
+	result.m_[1][1] = -height / 2.0f;
+	result.m_[2][2] = maxDepth - minDepth;
+	result.m_[3][0] = left + (width / 2.0f);
+	result.m_[3][1] = top + (height / 2.0f);
+	result.m_[3][2] = minDepth;
+	result.m_[3][3] = 1.0f;
+
+	return result;
+}
