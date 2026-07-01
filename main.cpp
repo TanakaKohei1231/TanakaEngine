@@ -17,6 +17,7 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <cmath>
+#include "Vector2.h"
 
 
 #pragma comment(lib, "d3d12.lib")
@@ -40,9 +41,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 const int32_t kClientWidth = 1280;
 const int32_t kClientHeight = 720;
 
-struct Vector2 {
-	float x, y;
-};
 
 struct Vector4 {
 	float x, y, z, w;
@@ -57,6 +55,8 @@ struct VertexData {
 struct Material {
 	Vector4 color;
 	int32_t enableLighting;
+	float padding[3];
+	Matrix4x4 uvTransform;
 };
 
 struct TransformationMatrix {
@@ -897,6 +897,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ライティングは有効
 	materialData->enableLighting = true;
 
+	materialData->uvTransform = Matrix4x4::MakeIdentity4x4();
+
 	// スプライトはライティングしないので、スプライト用のマテリアルリソースを作る
 	ID3D12Resource *materialResourceSprite = CreateBufferResource(device, sizeof(Material));
 
@@ -904,6 +906,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	materialResourceSprite->Map(0, nullptr, reinterpret_cast<void **>(&materialDataSprite));
 	materialDataSprite->color = {1.0f, 1.0f, 1.0f, 1.0f};
 	materialDataSprite->enableLighting = false;
+	materialDataSprite->uvTransform = Matrix4x4::MakeIdentity4x4();
 
 	// 平行光源用のリソースを作る
 	ID3D12Resource *directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
@@ -1210,6 +1213,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	transformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	transformSprite.translate = {0.0f, 0.0f, 0.0f};
 
+	Transform uvTransformSprite = {};
+	uvTransformSprite.scale = {1.0f, 1.0f, 1.0f};
+	uvTransformSprite.rotate = {0.0f, 0.0f, 0.0f};
+	uvTransformSprite.translate = {0.0f, 0.0f, 0.0f};
+
 	// zが+の方向を向くカメラ
 	cameraTransform.translate.z = -10.0f;
 
@@ -1273,6 +1281,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				ImGui::TreePop();
 			}
 
+			if (ImGui::TreeNode("UVTransform")) {
+				ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
+				ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
+				ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
+				ImGui::TreePop();
+			}
+
 			ImGui::ColorEdit4("Light Color", &directionalLightData->color.x);
 			ImGui::DragFloat3("Light Direction", &directionalLightData->direction.x, 0.01f);
 			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f);
@@ -1303,6 +1318,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
 			transformationMatrixDataSprite->World = worldMatrixSprite;
+
+			Matrix4x4 uvTransformMatrix = Matrix4x4::MakeScaleMatrix(uvTransformSprite.scale);
+			uvTransformMatrix = Matrix4x4::Multiply(uvTransformMatrix, Matrix4x4::MakeRotateZMatrix(uvTransformSprite.rotate.z));
+			uvTransformMatrix = Matrix4x4::Multiply(uvTransformMatrix, Matrix4x4::MakeTranslateMatrix(uvTransformSprite.translate));
+
+			materialDataSprite->uvTransform = uvTransformMatrix;
 
 			// Lightの方向は正規化しておく
 			directionalLightData->direction = Vector3::Normalize(directionalLightData->direction);
