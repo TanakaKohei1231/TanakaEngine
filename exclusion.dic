@@ -2,3 +2,5 @@ dxgi
 hlsl
 Descs
 texcoord
+texcoords
+normals
