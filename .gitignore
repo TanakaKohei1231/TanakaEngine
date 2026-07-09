@@ -366,3 +366,5 @@ DirectXGame/imgui.ini
 *.dmp
 Dumps/
 imgui.ini
+
+!resources/**/*.obj
