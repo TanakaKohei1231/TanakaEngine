@@ -38,25 +38,19 @@ class Matrix4x4 {
 	static Matrix4x4 MakeScaleMatrix(const Vector3 &scale);
 
 	// X軸回転行列の生成
-	static Matrix4x4 MakeRotateXMatrix(float radian);
+	static Matrix4x4 MakeRotateXMatrix(float rotate);
 
 	// Y軸回転行列の生成
-	static Matrix4x4 MakeRotateYMatrix(float radian);
+	static Matrix4x4 MakeRotateYMatrix(float rotate);
 
 	// Z軸回転行列の生成
-	static Matrix4x4 MakeRotateZMatrix(float radian);
+	static Matrix4x4 MakeRotateZMatrix(float rotate);
 
-	// 全回転行列の生成
-	static Matrix4x4 MakeRotateXYZMatrix(const Vector3 &radian) {
-		Matrix4x4 rotateXMatrix = MakeRotateXMatrix(radian.x);
-		Matrix4x4 rotateYMatrix = MakeRotateYMatrix(radian.y);
-		Matrix4x4 rotateZMatrix = MakeRotateZMatrix(radian.z);
+	// XYZ軸回転行列の生成
+	static Matrix4x4 MakeRotateXYZMatrix(const Vector3 &rotate);
 
-		return Multiply(rotateXMatrix, Multiply(rotateYMatrix, rotateZMatrix));
-	}
-
-	// アフィン行列の生成
-	static Matrix4x4 MakeAffineMatrix(const Vector3 &scale, const Vector3 &rotate, const Vector3 &translate);
+	// アフィン変換行列の生成
+	static Matrix4x4 MakeAffineMatrix(const Vector3 &scale, const Vector3 &rotate, const Vector3 &translation);
 	static Matrix4x4 MakeAffineMatrix(const Transform &transform);
 
 	// 透視投影行列の生成
@@ -68,6 +62,30 @@ class Matrix4x4 {
 	// ビューポート変換行列の生成
 	static Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth);
 
-  private:
-	static const int kColumnWidth = 60;
+	// ローカル座標をスクリーン座標に変換する関数
+	static Vector3 TransformToScreen(const Vector3 &localVertex, const Matrix4x4 &worldViewProjectionMatrix, const Matrix4x4 &viewportMatrix);
+
+	Matrix4x4 operator+(const Matrix4x4 &obj) const {
+		return Add(*this, obj);
+	};
+
+	Matrix4x4 operator-(const Matrix4x4 &obj) const {
+		return Subtract(*this, obj);
+	};
+
+	Matrix4x4 operator*(const Matrix4x4 &obj) const {
+		return Multiply(*this, obj);
+	};
+
+	void operator+=(const Matrix4x4 &obj) {
+		*this = Add(*this, obj);
+	}
+
+	void operator-=(const Matrix4x4 &obj) {
+		*this = Subtract(*this, obj);
+	}
+
+	void operator*=(const Matrix4x4 &obj) {
+		*this = Multiply(*this, obj);
+	}
 };

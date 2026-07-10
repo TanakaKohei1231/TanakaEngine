@@ -25,6 +25,8 @@
 #include <xaudio2.h>
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
+#include "DebugCamera.h"
+#include"Input.h"
 
 
 #pragma comment(lib, "d3d12.lib")
@@ -699,22 +701,6 @@ void SoundPlayWave(IXAudio2 *xAudio2, const SoundData &soundData) {
 	// 波形データの再生
 	result = pSourceVoice->SubmitSourceBuffer(&buf);
 	result = pSourceVoice->Start();
-}
-
-// キーを押した状態か
-bool IsPressKey(const BYTE *key, uint8_t keyNumber) { return key[keyNumber] != 0; }
-
-// キーを離した状態か
-bool IsReleaseKey(const BYTE *key, uint8_t keyNumber) { return key[keyNumber] == 0; }
-
-// キーを押した瞬間か
-bool IsTriggerKey(const BYTE *key, const BYTE *previousKey, uint8_t keyNumber) {
-	return key[keyNumber] != 0 && previousKey[keyNumber] == 0;
-}
-
-// キーを離した瞬間か
-bool IsReleaseTriggerKey(const BYTE *key, const BYTE *previousKey, uint8_t keyNumber) {
-	return key[keyNumber] == 0 && previousKey[keyNumber] != 0;
 }
 
 
@@ -1455,6 +1441,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	assert(SUCCEEDED(hr));
 
 
+	// マウスデバイスの生成
+	Microsoft::WRL::ComPtr<IDirectInputDevice8> mouse;
+	hr = directInput->CreateDevice(GUID_SysMouse, mouse.GetAddressOf(), NULL);
+	assert(SUCCEEDED(hr));
+
+	// 入力データ形式のセット
+	hr = mouse->SetDataFormat(&c_dfDIMouse2);
+	assert(SUCCEEDED(hr));
+
+	// 排他制御レベルのセット
+	hr = mouse->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+	assert(SUCCEEDED(hr));
+
+
 	// ===========================================================
 	// ゲーム用変数の宣言
 	// ===========================================================
@@ -1463,13 +1463,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	BYTE key[256] = {};
 
 	// 前フレームの全キーの入力状態
-	BYTE previousKey[256] = {};
+	BYTE preKey[256] = {};
+
+	// マウスの入力状態
+	DIMOUSESTATE2 mouseState{};
+
+	// 前フレームのマウス入力状態
+	DIMOUSESTATE2 preMouseState{};
+
 
 	Transform transform = {};
 	transform.scale = {1.0f, 1.0f, 1.0f};
-
-	Transform cameraTransform = {};
-	cameraTransform.scale = {1.0f, 1.0f, 1.0f};
 
 	Transform transformSprite = {};
 	transformSprite.scale = {1.0f, 1.0f, 1.0f};
@@ -1481,12 +1485,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	uvTransformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	uvTransformSprite.translate = {0.0f, 0.0f, 0.0f};
 
-	// zが+の方向を向くカメラ
-	cameraTransform.translate.z = -10.0f;
-
-	Matrix4x4 projectionMatrix = Matrix4x4::MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
-
 	bool useMonsterBall = false;
+
+	DebugCamera debugCamera(key, preKey, &mouseState, &preMouseState);
 
 
 	// ===========================================================
@@ -1502,13 +1503,29 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		} else {
 
 			// 前フレームのキー入力状態を保存する
-			std::memcpy(previousKey, key, sizeof(key));
+			std::memcpy(preKey, key, sizeof(key));
 
 			// キーボード情報の取得開始
 			keyboard->Acquire();
 
 			// 全キーの入力状態を取得する
 			keyboard->GetDeviceState(sizeof(key), key);
+
+			// 前フレームのマウス入力状態を保存する
+			preMouseState = mouseState;
+
+			// マウス入力状態を初期化する
+			mouseState = {};
+
+			// マウス情報の取得開始
+			mouse->Acquire();
+
+			// マウスの入力状態を取得する
+			hr = mouse->GetDeviceState(sizeof(mouseState), &mouseState);
+			if (FAILED(hr)) {
+				mouse->Acquire();
+				hr = mouse->GetDeviceState(sizeof(mouseState), &mouseState);
+			}
 
 			// ===========================================================
 			// ImGuiの準備
@@ -1537,12 +1554,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			}
 
 			// 数字の0キーを押した瞬間なら出力ウィンドウに「Trigger 0」と表示
-			if (IsTriggerKey(key, previousKey, DIK_0)) {
+			if (IsTriggerKey(key, preKey, DIK_0)) {
 				OutputDebugStringA("Trigger 0\n");
 			}
 
 			// 数字の0キーを離した瞬間なら出力ウィンドウに「Release 0」と表示
-			if (IsReleaseTriggerKey(key, previousKey, DIK_0)) {
+			if (IsReleaseTriggerKey(key, preKey, DIK_0)) {
 				OutputDebugStringA("Release 0\n");
 			}
 
@@ -1584,11 +1601,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			#endif // USE_IMGUI
 
 
-
+			debugCamera.Update();
 			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(transform);
-			Matrix4x4 cameraMatrix = Matrix4x4::MakeAffineMatrix(cameraTransform);
-			Matrix4x4 viewMatrix = Matrix4x4::Inverse(cameraMatrix);
-			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, Matrix4x4::Multiply(viewMatrix, projectionMatrix));
+			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera.GetViewProjectionMatrix());
 
 			wvpData->WVP = worldViewProjectionMatrix;
 			wvpData->World = worldMatrix;

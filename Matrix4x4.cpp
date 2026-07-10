@@ -178,7 +178,6 @@ Matrix4x4 Matrix4x4::MakeIdentity4x4() {
 	return result;
 }
 
-
 Vector3 Matrix4x4::TransformCoord(const Vector3& v, const Matrix4x4& m) {
 	Vector3 result{};
 
@@ -243,6 +242,14 @@ Matrix4x4 Matrix4x4::MakeRotateZMatrix(float radian) {
 	return result;
 }
 
+Matrix4x4 Matrix4x4::MakeRotateXYZMatrix(const Vector3 &rotate) {
+	Matrix4x4 rotateXMatrix = MakeRotateXMatrix(rotate.x);
+	Matrix4x4 rotateYMatrix = MakeRotateYMatrix(rotate.y);
+	Matrix4x4 rotateZMatrix = MakeRotateZMatrix(rotate.z);
+
+	return Multiply(rotateXMatrix, Multiply(rotateYMatrix, rotateZMatrix));
+}
+
 Matrix4x4 Matrix4x4::MakeAffineMatrix(const Vector3 &scale, const Vector3 &rotate, const Vector3 &translate) {
 	Matrix4x4 scaleMatrix = MakeScaleMatrix(scale);
 	Matrix4x4 rotateMatrix = MakeRotateXYZMatrix(rotate);
@@ -267,7 +274,6 @@ Matrix4x4 Matrix4x4::MakePerspectiveFovMatrix(float fovY, float aspectRatio, flo
 	result.m_[2][2] = farClip / (farClip - nearClip);
 	result.m_[2][3] = 1.0f;
 	result.m_[3][2] = (-nearClip * farClip) / (farClip - nearClip);
-	result.m_[3][3] = 0.0f;
 
 	return result;
 }
@@ -299,4 +305,11 @@ Matrix4x4 Matrix4x4::MakeViewportMatrix(float left, float top, float width, floa
 	result.m_[3][3] = 1.0f;
 
 	return result;
+}
+
+Vector3 Matrix4x4::TransformToScreen(const Vector3 &worldPosition, const Matrix4x4 &viewProjectionMatrix, const Matrix4x4 &viewportMatrix) {
+	Vector3 ndcVertex = TransformCoord(worldPosition, viewProjectionMatrix);
+	Vector3 screenVertex = TransformCoord(ndcVertex, viewportMatrix);
+
+	return screenVertex;
 }

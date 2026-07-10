@@ -146,16 +146,3 @@ struct Vector2 {
 constexpr Vector2 operator*(float scalar, const Vector2 &vec) {
 	return { vec.x * scalar, vec.y * scalar };
 }
-
-
-struct Position {
-	Vector2 worldPos;
-	Vector2 screenPos;
-	Vector2 localPos;
-};
-
-struct Rect {
-	Position position;
-	float width;
-	float height;
-};
