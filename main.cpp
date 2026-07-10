@@ -23,6 +23,8 @@
 #include <cstring>
 #include <wrl.h>
 #include <xaudio2.h>
+#define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
+#include <dinput.h>
 
 
 #pragma comment(lib, "d3d12.lib")
@@ -31,6 +33,7 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "xaudio2.lib")
+#pragma comment(lib, "dinput8.lib")
 
 #ifdef USE_IMGUI
 
@@ -696,6 +699,22 @@ void SoundPlayWave(IXAudio2 *xAudio2, const SoundData &soundData) {
 	// 波形データの再生
 	result = pSourceVoice->SubmitSourceBuffer(&buf);
 	result = pSourceVoice->Start();
+}
+
+// キーを押した状態か
+bool IsPressKey(const BYTE *key, uint8_t keyNumber) { return key[keyNumber] != 0; }
+
+// キーを離した状態か
+bool IsReleaseKey(const BYTE *key, uint8_t keyNumber) { return key[keyNumber] == 0; }
+
+// キーを押した瞬間か
+bool IsTriggerKey(const BYTE *key, const BYTE *previousKey, uint8_t keyNumber) {
+	return key[keyNumber] != 0 && previousKey[keyNumber] == 0;
+}
+
+// キーを離した瞬間か
+bool IsReleaseTriggerKey(const BYTE *key, const BYTE *previousKey, uint8_t keyNumber) {
+	return key[keyNumber] == 0 && previousKey[keyNumber] != 0;
 }
 
 
@@ -1405,9 +1424,46 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 音声再生
 	SoundPlayWave(xAudio2.Get(), soundData1);
 
+
+	// ===========================================================
+	// DirectInputの初期化
+	// ===========================================================
+
+	// DirectInputの初期化
+	Microsoft::WRL::ComPtr<IDirectInput8> directInput;
+
+	hr = DirectInput8Create(
+		wc.hInstance, DIRECTINPUT_VERSION,
+		IID_IDirectInput8,
+		reinterpret_cast<void **>(directInput.GetAddressOf()),
+		nullptr
+	);
+
+	assert(SUCCEEDED(hr));
+
+	// キーボードデバイスの生成
+	Microsoft::WRL::ComPtr<IDirectInputDevice8> keyboard;
+	hr = directInput->CreateDevice(GUID_SysKeyboard, keyboard.GetAddressOf(), NULL);
+	assert(SUCCEEDED(hr));
+
+	// 入力データ形式のセット
+	hr = keyboard->SetDataFormat(&c_dfDIKeyboard); // 標準形式
+	assert(SUCCEEDED(hr));
+
+	// 排他制御レベルのセット
+	hr = keyboard->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
+	assert(SUCCEEDED(hr));
+
+
 	// ===========================================================
 	// ゲーム用変数の宣言
 	// ===========================================================
+
+	// 全キーの入力状態
+	BYTE key[256] = {};
+
+	// 前フレームの全キーの入力状態
+	BYTE previousKey[256] = {};
 
 	Transform transform = {};
 	transform.scale = {1.0f, 1.0f, 1.0f};
@@ -1445,6 +1501,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			DispatchMessage(&msg);
 		} else {
 
+			// 前フレームのキー入力状態を保存する
+			std::memcpy(previousKey, key, sizeof(key));
+
+			// キーボード情報の取得開始
+			keyboard->Acquire();
+
+			// 全キーの入力状態を取得する
+			keyboard->GetDeviceState(sizeof(key), key);
+
 			// ===========================================================
 			// ImGuiの準備
 			// ===========================================================
@@ -1465,6 +1530,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			//
 			// 更新処理
 			//
+
+			// 数字の0キーが押されていたら出力ウィンドウに「Press 0」と表示
+			if (IsPressKey(key, DIK_0)) {
+				OutputDebugStringA("Press 0\n");
+			}
+
+			// 数字の0キーを押した瞬間なら出力ウィンドウに「Trigger 0」と表示
+			if (IsTriggerKey(key, previousKey, DIK_0)) {
+				OutputDebugStringA("Trigger 0\n");
+			}
+
+			// 数字の0キーを離した瞬間なら出力ウィンドウに「Release 0」と表示
+			if (IsReleaseTriggerKey(key, previousKey, DIK_0)) {
+				OutputDebugStringA("Release 0\n");
+			}
 
 			#ifdef USE_IMGUI
 
@@ -1701,6 +1781,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ImGui::DestroyContext();
 
 	#endif // USE_IMGUI
+
+	// キーボード入力の取得終了
+	keyboard->Unacquire();
 
 	// XAudio2解放
 	xAudio2.Reset();
