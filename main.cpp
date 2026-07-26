@@ -879,36 +879,6 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 	return modelData;
 }
 
-void OffsetMesh(MeshData &mesh, const Vector3 &offset) {
-	for (VertexData &vertex : mesh.vertices) {
-		vertex.position.x += offset.x;
-		vertex.position.y += offset.y;
-		vertex.position.z += offset.z;
-	}
-}
-
-ModelData CreateMultiMeshSphereModelData(uint32_t subdivision, float radius) {
-	ModelData modelData{};
-
-	ModelData baseSphereModelData = CreateSphereModelData(subdivision, radius);
-	assert(!baseSphereModelData.meshes.empty());
-
-	MeshData leftSphereMesh = baseSphereModelData.meshes[0];
-	leftSphereMesh.name = "leftSphere";
-	leftSphereMesh.materialIndex = 0;
-	OffsetMesh(leftSphereMesh, {-1.2f, 0.0f, 0.0f});
-
-	MeshData rightSphereMesh = baseSphereModelData.meshes[0];
-	rightSphereMesh.name = "rightSphere";
-	rightSphereMesh.materialIndex = 1;
-	OffsetMesh(rightSphereMesh, {1.2f, 0.0f, 0.0f});
-
-	modelData.meshes.push_back(leftSphereMesh);
-	modelData.meshes.push_back(rightSphereMesh);
-
-	return modelData;
-}
-
 SoundData SoundLoadWave(const char *filename) {
 	// ファイル入力ストリームのインスタンス
 	std::ifstream file;
