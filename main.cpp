@@ -26,6 +26,7 @@
 #include <xaudio2.h>
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
+#include <Xinput.h>
 #include "DebugCamera.h"
 #include"Input.h"
 
@@ -38,6 +39,7 @@
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "xaudio2.lib")
 #pragma comment(lib, "dinput8.lib")
+#pragma comment(lib, "xinput.lib")
 
 #ifdef USE_IMGUI
 
@@ -54,6 +56,11 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 const int32_t kClientWidth = 1280;
 const int32_t kClientHeight = 720;
 
+enum LightingType {
+	LIGHTING_NONE,
+	LIGHTING_LAMBERT,
+	LIGHTING_HALF_LAMBERT,
+};
 
 struct Vector4 {
 	float x, y, z, w;
@@ -67,7 +74,7 @@ struct VertexData {
 
 struct Material {
 	Vector4 color;
-	int32_t enableLighting;
+	int32_t lightingType;
 	float padding[3];
 	Matrix4x4 uvTransform;
 };
@@ -727,7 +734,10 @@ void SoundPlayWave(IXAudio2 *xAudio2, const SoundData &soundData) {
 
 	// 波形データの再生
 	result = pSourceVoice->SubmitSourceBuffer(&buf);
+	assert(SUCCEEDED(result));
+
 	result = pSourceVoice->Start();
+	assert(SUCCEEDED(result));
 }
 
 
@@ -1192,8 +1202,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 今回は赤を書き込んでみる
 	materialData->color = {1.0f, 1.0f, 1.0f, 1.0f};
 
-	// ライティングは有効
-	materialData->enableLighting = true;
+	// 初期ライティング方式はHalf Lambert
+	materialData->lightingType = LIGHTING_HALF_LAMBERT;
 
 	materialData->uvTransform = Matrix4x4::MakeIdentity4x4();
 
@@ -1203,7 +1213,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Material *materialDataSprite = nullptr;
 	materialResourceSprite->Map(0, nullptr, reinterpret_cast<void **>(&materialDataSprite));
 	materialDataSprite->color = {1.0f, 1.0f, 1.0f, 1.0f};
-	materialDataSprite->enableLighting = false;
+	materialDataSprite->lightingType = LIGHTING_NONE;
 	materialDataSprite->uvTransform = Matrix4x4::MakeIdentity4x4();
 
 	// 平行光源用のリソースを作る
@@ -1531,6 +1541,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 前フレームのマウス入力状態
 	DIMOUSESTATE2 preMouseState{};
 
+	// ゲームパッドの入力状態
+	XINPUT_STATE gamePadState{};
+
+	// 前フレームのゲームパッド入力状態
+	XINPUT_STATE preGamePadState{};
+
+	// ゲームパッドが接続されているか
+	bool isGamePadConnected = false;
+
 
 	Transform transform = {};
 	transform.scale = {1.0f, 1.0f, 1.0f};
@@ -1547,7 +1566,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	bool useMonsterBall = false;
 
-	DebugCamera debugCamera(key, preKey, &mouseState, &preMouseState);
+	// ライティング方式
+	int lightingType = LIGHTING_HALF_LAMBERT;
+
+	const char *lightingTypeItems[] = {
+		"None",
+		"Lambert",
+		"Half Lambert",
+	};
+
+	DebugCamera debugCamera(key, preKey, &mouseState, &preMouseState ,&gamePadState, &preGamePadState, &isGamePadConnected);
 
 
 	// ===========================================================
@@ -1579,6 +1607,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			// マウス情報の取得開始
 			mouse->Acquire();
+
+			// 前フレームのゲームパッド入力状態を保存する
+			preGamePadState = gamePadState;
+
+			// ゲームパッド入力状態を初期化する
+			gamePadState = {};
+
+			// ゲームパッドの入力状態を取得する
+			DWORD gamePadResult = XInputGetState(0, &gamePadState);
+			isGamePadConnected = gamePadResult == ERROR_SUCCESS;
+
+			// ゲームパッドが接続されてなければ入力状態を初期化
+			if (!isGamePadConnected) {
+				gamePadState = {};
+				preGamePadState = {};
+			}
 
 			// マウスの入力状態を取得する
 			hr = mouse->GetDeviceState(sizeof(mouseState), &mouseState);
@@ -1623,10 +1667,30 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				OutputDebugStringA("Release 0\n");
 			}
 
+			// Spaceキーを押した瞬間なら音声を再生
+			if (IsTriggerKey(key, preKey, DIK_SPACE)) {
+				SoundPlayWave(xAudio2.Get(), soundData1);
+			}
+
+			// GamePadのAボタンを押した瞬間なら音声を再生
+			if (isGamePadConnected) {
+				if (IsTriggerGamePadButton(&gamePadState, &preGamePadState, XINPUT_GAMEPAD_A)) {
+					SoundPlayWave(xAudio2.Get(), soundData1);
+				}
+			}
+
 			#ifdef USE_IMGUI
 
 
 			ImGui::Begin("Texture Color");
+			// サウンドのキー説明
+			ImGui::Text("Press SPACE key : Play Sound");
+
+			ImGui::SeparatorText("GamePad");
+			ImGui::Text("GamePad : %s", isGamePadConnected ? "Connected" : "Not Connected");
+			ImGui::Text("Right Stick : Pivot Rotate Camera");
+			ImGui::Text("LT / RT : Move Camera Z");
+			ImGui::Text("D-Pad : Move Camera XY");
 
 			ImGui::Checkbox("useMonsterBall", &useMonsterBall);
 
@@ -1652,6 +1716,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				ImGui::TreePop();
 			}
 
+			ImGui::Combo("Lighting Type", &lightingType, lightingTypeItems, _countof(lightingTypeItems));
+
 			ImGui::ColorEdit4("Light Color", &directionalLightData->color.x);
 			ImGui::DragFloat3("Light Direction", &directionalLightData->direction.x, 0.01f);
 			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f);
@@ -1659,6 +1725,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui::End();
 
 			#endif // USE_IMGUI
+
+			// ライティングタイプの適用
+			materialData->lightingType = lightingType;
 
 
 			debugCamera.Update();

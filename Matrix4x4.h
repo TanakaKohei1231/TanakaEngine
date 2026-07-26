@@ -88,4 +88,10 @@ class Matrix4x4 {
 	void operator*=(const Matrix4x4 &obj) {
 		*this = Multiply(*this, obj);
 	}
+
+	bool operator==(const Matrix4x4 &obj) const;
+
+	bool operator!=(const Matrix4x4 &obj) const {
+		return !(*this == obj);
+	}
 };

@@ -313,3 +313,15 @@ Vector3 Matrix4x4::TransformToScreen(const Vector3 &worldPosition, const Matrix4
 
 	return screenVertex;
 }
+
+bool Matrix4x4::operator==(const Matrix4x4& obj) const {
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			if (m_[i][j] != obj.m_[i][j]) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}

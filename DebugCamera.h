@@ -2,6 +2,7 @@
 #include"Vector3.h"
 #include"Matrix4x4.h"
 #include <Windows.h>
+#include <Xinput.h>
 
 #ifndef DIRECTINPUT_VERSION
 #define DIRECTINPUT_VERSION 0x0800
@@ -13,6 +14,7 @@ class DebugCamera {
 	DebugCamera(
 		const BYTE *key,const BYTE *preKey,
 		const DIMOUSESTATE2 *mouseState, const DIMOUSESTATE2 *previousMouseState,
+		const XINPUT_STATE *gamePadState, const XINPUT_STATE *preGamePadState, const bool *isGamePadConnected,
 		const Vector3 &translation = defaultTranslation, const Vector3 &rotation = defaultRotation
 	);
 
@@ -45,6 +47,22 @@ class DebugCamera {
 	const DIMOUSESTATE2 *mouseState_ = nullptr;
 	const DIMOUSESTATE2 *preMouseState_ = nullptr;
 
+	// キーボード・マウスでの操作
+	bool UpdateKeyMouseMove();
+
+	// ゲームパッド入力状態へのポインタ
+	const XINPUT_STATE *gamePadState_ = nullptr;
+	const XINPUT_STATE *preGamePadState_ = nullptr;
+
+	// ゲームパッドが接続されているか
+	const bool *isGamePadConnected_ = nullptr;
+
+	// ゲームパッドが正常に接続されているか
+	bool IsGamePadConnected();
+
+	// ゲームパッドでの操作
+	bool UpdateGamePadMove();
+
 	// 行列の更新
 	void UpdateMatrix();
 
@@ -64,4 +82,13 @@ class DebugCamera {
 
 	// 回転速度
 	static inline const float kRotateSpeed = 0.005f;
+
+	// ゲームパッドによる移動速度
+	static inline const float kGamePadMoveSpeed = 0.1f;
+
+	// ゲームパッドによるZ移動速度
+	static inline const float kGamePadZMoveSpeed = 0.2f;
+
+	// ゲームパッドによる回転速度
+	static inline const float kGamePadRotateSpeed = 0.03f;
 };
