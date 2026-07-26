@@ -65,6 +65,7 @@ enum LightingType {
 enum ModelType {
 	MODEL_PLANE,
 	MODEL_SPHERE,
+	MODEL_MULTI_SPHERE,
 	MODEL_COUNT,
 };
 
@@ -100,8 +101,13 @@ struct MaterialData {
 	std::string textureFilePath;
 };
 
-struct ModelData {
+struct MeshData {
+	std::string name;
 	std::vector<VertexData> vertices;
+};
+
+struct ModelData {
+	std::vector<MeshData> meshes;
 	MaterialData material;
 };
 
@@ -145,11 +151,17 @@ struct SoundData {
 	unsigned int bufferSize;
 };
 
+struct MeshResource {
+	std::string name;
+	std::vector<VertexData> vertices;
+	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource;
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+};
+
 struct ModelResource {
 	std::string name;
 	ModelData modelData;
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource;
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+	std::vector<MeshResource> meshes;
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource;
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU;
 };
@@ -384,12 +396,54 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(const Microsoft::WRL
 	// 実際にリソースを作る
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 
-	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc,
-	                                             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(resource.GetAddressOf()));
+	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(resource.GetAddressOf()));
 
 	assert(SUCCEEDED(hr));
 
 	return resource;
+}
+
+MeshResource CreateMeshResource(const Microsoft::WRL::ComPtr<ID3D12Device> &device, const MeshData &meshData) {
+	MeshResource meshResource{};
+
+	meshResource.name = meshData.name;
+	meshResource.vertices = meshData.vertices;
+
+	meshResource.vertexResource = CreateBufferResource(device, sizeof(VertexData) * meshResource.vertices.size());
+
+	meshResource.vertexBufferView.BufferLocation = meshResource.vertexResource->GetGPUVirtualAddress();
+
+	meshResource.vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * meshResource.vertices.size());
+
+	meshResource.vertexBufferView.StrideInBytes = sizeof(VertexData);
+
+	VertexData *vertexData = nullptr;
+	HRESULT hr = meshResource.vertexResource->Map(0, nullptr, reinterpret_cast<void **>(&vertexData));
+	assert(SUCCEEDED(hr));
+
+	std::memcpy(vertexData, meshResource.vertices.data(), sizeof(VertexData) * meshResource.vertices.size());
+
+	return meshResource;
+}
+
+ModelResource CreateModelResource(
+	const Microsoft::WRL::ComPtr<ID3D12Device> &device, const std::string &name,
+	const ModelData &modelData,
+	const Microsoft::WRL::ComPtr<ID3D12Resource> &textureResource,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU
+) {
+	ModelResource modelResource{};
+
+	modelResource.name = name;
+	modelResource.modelData = modelData;
+	modelResource.textureResource = textureResource;
+	modelResource.textureSrvHandleGPU = textureSrvHandleGPU;
+
+	for (const MeshData &meshData : modelData.meshes) {
+		modelResource.meshes.push_back(CreateMeshResource(device, meshData));
+	}
+
+	return modelResource;
 }
 
 
@@ -591,53 +645,67 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 	std::vector<Vector2> texcoords; // テクスチャ座標
 	std::string line;               // ファイルから読んだ1行を格納するもの
 
-	std::ifstream file(directoryPath + "/" + filename); // ファイルを開く
-	assert(file.is_open());                             // とりあえず開けなかったら止める
+	std::ifstream file(directoryPath + "/" + filename);
+	assert(file.is_open());
+
+	MeshData currentMesh{};
+	currentMesh.name = "default";
 
 	while (std::getline(file, line)) {
 		std::string identifier;
 		std::istringstream s(line);
-		s >> identifier; // 先頭の識別子を読む
+		s >> identifier;
 
-		// identifierに応じた処理
 		if (identifier == "mtllib") {
-			// materialTemplateLibraryファイルの名前を取得する
 			std::string materialFilename;
 			s >> materialFilename;
-			// 基本的にobjファイルと同一階層にmtlは存在させるので、ディレクトリ名とファイル名を渡す
 			modelData.material = LoadMaterialTemplateFile(directoryPath, materialFilename);
+
+		} else if (identifier == "o" || identifier == "g") {
+			// すでに頂点が入っているなら、現在のメッシュを確定する
+			if (!currentMesh.vertices.empty()) {
+				modelData.meshes.push_back(currentMesh);
+				currentMesh = {};
+			}
+
+			s >> currentMesh.name;
+
+			if (currentMesh.name.empty()) {
+				currentMesh.name = "mesh";
+			}
+
 		} else if (identifier == "v") {
 			Vector4 position;
 			s >> position.x >> position.y >> position.z;
 			position.w = 1.0f;
 			positions.push_back(position);
+
 		} else if (identifier == "vt") {
 			Vector2 texcoord;
 			s >> texcoord.x >> texcoord.y;
 			texcoords.push_back(texcoord);
+
 		} else if (identifier == "vn") {
 			Vector3 normal;
 			s >> normal.x >> normal.y >> normal.z;
 			normals.push_back(normal);
+
 		} else if (identifier == "f") {
 			VertexData triangle[3];
 
-			// 面は三角形限定。その他は未対応
 			for (int32_t faceVertex = 0; faceVertex < 3; ++faceVertex) {
 				std::string vertexDefinition;
 				s >> vertexDefinition;
 
-				// 頂点の要素へのIndexは「位置/UV/法線」で格納されているので、分解してIndexを取得する
 				std::istringstream v(vertexDefinition);
 				uint32_t elementIndices[3] = {};
 
 				for (int32_t element = 0; element < 3; ++element) {
 					std::string index;
-					std::getline(v, index, '/'); // 区切りでインデックスを読んでいく
+					std::getline(v, index, '/');
 					elementIndices[element] = std::stoi(index);
 				}
 
-				// 要素へのIndexから、実際の要素の値を取得して、頂点を構築する
 				Vector4 position = positions[elementIndices[0] - 1];
 				Vector2 texcoord = texcoords[elementIndices[1] - 1];
 				Vector3 normal = normals[elementIndices[2] - 1];
@@ -654,10 +722,14 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 			// しかし、このplane.objではx反転の時点で三角形の回り順も反転するため、
 			// さらに逆順登録すると現在のカリング設定で裏面扱いになり表示されなかった。
 			// そのため、今回想定しているplane.objでは逆順登録は行わない。
-			modelData.vertices.push_back(triangle[0]);
-			modelData.vertices.push_back(triangle[1]);
-			modelData.vertices.push_back(triangle[2]);
+			currentMesh.vertices.push_back(triangle[0]);
+			currentMesh.vertices.push_back(triangle[1]);
+			currentMesh.vertices.push_back(triangle[2]);
 		}
+	}
+
+	if (!currentMesh.vertices.empty()) {
+		modelData.meshes.push_back(currentMesh);
 	}
 
 	return modelData;
@@ -665,6 +737,8 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 
 ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 	ModelData modelData{};
+	MeshData sphereMesh{};
+	sphereMesh.name = "sphere";
 
 	const float kPi = static_cast<float>(M_PI);
 
@@ -676,29 +750,45 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 			float longitude0 = 2.0f * kPi * static_cast<float>(longitudeIndex) / static_cast<float>(subdivision);
 			float longitude1 = 2.0f * kPi * static_cast<float>(longitudeIndex + 1) / static_cast<float>(subdivision);
 
-			Vector3 position0 = {radius * std::sin(latitude0) * std::cos(longitude0), radius * std::cos(latitude0),
-			                     radius * std::sin(latitude0) * std::sin(longitude0)};
+			Vector3 position0 = {
+				radius * std::sin(latitude0) * std::cos(longitude0), radius * std::cos(latitude0),
+				radius * std::sin(latitude0) * std::sin(longitude0)
+			};
 
-			Vector3 position1 = {radius * std::sin(latitude1) * std::cos(longitude0), radius * std::cos(latitude1),
-			                     radius * std::sin(latitude1) * std::sin(longitude0)};
+			Vector3 position1 = {
+				radius * std::sin(latitude1) * std::cos(longitude0), radius * std::cos(latitude1),
+				radius * std::sin(latitude1) * std::sin(longitude0)
+			};
 
-			Vector3 position2 = {radius * std::sin(latitude0) * std::cos(longitude1), radius * std::cos(latitude0),
-			                     radius * std::sin(latitude0) * std::sin(longitude1)};
+			Vector3 position2 = {
+				radius * std::sin(latitude0) * std::cos(longitude1), radius * std::cos(latitude0),
+				radius * std::sin(latitude0) * std::sin(longitude1)
+			};
 
-			Vector3 position3 = {radius * std::sin(latitude1) * std::cos(longitude1), radius * std::cos(latitude1),
-			                     radius * std::sin(latitude1) * std::sin(longitude1)};
+			Vector3 position3 = {
+				radius * std::sin(latitude1) * std::cos(longitude1), radius * std::cos(latitude1),
+				radius * std::sin(latitude1) * std::sin(longitude1)
+			};
 
-			Vector2 texcoord0 = {static_cast<float>(longitudeIndex) / static_cast<float>(subdivision),
-			                     static_cast<float>(latitudeIndex) / static_cast<float>(subdivision)};
+			Vector2 texcoord0 = {
+				static_cast<float>(longitudeIndex) / static_cast<float>(subdivision),
+				static_cast<float>(latitudeIndex) / static_cast<float>(subdivision)
+			};
 
-			Vector2 texcoord1 = {static_cast<float>(longitudeIndex) / static_cast<float>(subdivision),
-			                     static_cast<float>(latitudeIndex + 1) / static_cast<float>(subdivision)};
+			Vector2 texcoord1 = {
+				static_cast<float>(longitudeIndex) / static_cast<float>(subdivision),
+				static_cast<float>(latitudeIndex + 1) / static_cast<float>(subdivision)
+			};
 
-			Vector2 texcoord2 = {static_cast<float>(longitudeIndex + 1) / static_cast<float>(subdivision),
-			                     static_cast<float>(latitudeIndex) / static_cast<float>(subdivision)};
+			Vector2 texcoord2 = {
+				static_cast<float>(longitudeIndex + 1) / static_cast<float>(subdivision),
+				static_cast<float>(latitudeIndex) / static_cast<float>(subdivision)
+			};
 
-			Vector2 texcoord3 = {static_cast<float>(longitudeIndex + 1) / static_cast<float>(subdivision),
-			                     static_cast<float>(latitudeIndex + 1) / static_cast<float>(subdivision)};
+			Vector2 texcoord3 = {
+				static_cast<float>(longitudeIndex + 1) / static_cast<float>(subdivision),
+				static_cast<float>(latitudeIndex + 1) / static_cast<float>(subdivision)
+			};
 
 			Vector3 normal0 = Vector3::Normalize(position0);
 			Vector3 normal1 = Vector3::Normalize(position1);
@@ -706,16 +796,45 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 			Vector3 normal3 = Vector3::Normalize(position3);
 
 			// 1枚目の三角形
-			modelData.vertices.push_back({{position0.x, position0.y, position0.z, 1.0f}, texcoord0, normal0});
-			modelData.vertices.push_back({{position2.x, position2.y, position2.z, 1.0f}, texcoord2, normal2});
-			modelData.vertices.push_back({{position1.x, position1.y, position1.z, 1.0f}, texcoord1, normal1});
+			sphereMesh.vertices.push_back({{position0.x, position0.y, position0.z, 1.0f}, texcoord0, normal0});
+			sphereMesh.vertices.push_back({{position2.x, position2.y, position2.z, 1.0f}, texcoord2, normal2});
+			sphereMesh.vertices.push_back({{position1.x, position1.y, position1.z, 1.0f}, texcoord1, normal1});
 
 			// 2枚目の三角形
-			modelData.vertices.push_back({{position2.x, position2.y, position2.z, 1.0f}, texcoord2, normal2});
-			modelData.vertices.push_back({{position3.x, position3.y, position3.z, 1.0f}, texcoord3, normal3});
-			modelData.vertices.push_back({{position1.x, position1.y, position1.z, 1.0f}, texcoord1, normal1});
+			sphereMesh.vertices.push_back({{position2.x, position2.y, position2.z, 1.0f}, texcoord2, normal2});
+			sphereMesh.vertices.push_back({{position3.x, position3.y, position3.z, 1.0f}, texcoord3, normal3});
+			sphereMesh.vertices.push_back({{position1.x, position1.y, position1.z, 1.0f}, texcoord1, normal1});
 		}
 	}
+	modelData.meshes.push_back(sphereMesh);
+
+	return modelData;
+}
+
+void OffsetMesh(MeshData &mesh, const Vector3 &offset) {
+	for (VertexData &vertex : mesh.vertices) {
+		vertex.position.x += offset.x;
+		vertex.position.y += offset.y;
+		vertex.position.z += offset.z;
+	}
+}
+
+ModelData CreateMultiMeshSphereModelData(uint32_t subdivision, float radius) {
+	ModelData modelData{};
+
+	ModelData baseSphereModelData = CreateSphereModelData(subdivision, radius);
+	assert(!baseSphereModelData.meshes.empty());
+
+	MeshData leftSphereMesh = baseSphereModelData.meshes[0];
+	leftSphereMesh.name = "leftSphere";
+	OffsetMesh(leftSphereMesh, {-1.2f, 0.0f, 0.0f});
+
+	MeshData rightSphereMesh = baseSphereModelData.meshes[0];
+	rightSphereMesh.name = "rightSphere";
+	OffsetMesh(rightSphereMesh, {1.2f, 0.0f, 0.0f});
+
+	modelData.meshes.push_back(leftSphereMesh);
+	modelData.meshes.push_back(rightSphereMesh);
 
 	return modelData;
 }
@@ -1363,39 +1482,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// モデル読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
 
-	// 頂点リソースを作る
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
-
-	// 頂点バッファビューを作成
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
-
-	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress(); // リソースの先頭のアドレスから使う
-	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size()); // 使用するリソースのサイズは頂点のサイズ
-	vertexBufferView.StrideInBytes = sizeof(VertexData);      // 1頂点あたりのサイズ
-
-	// 頂点リソースにデータを書き込む
-	VertexData *vertexData = nullptr;
-	vertexResource->Map(0, nullptr, reinterpret_cast<void **>(&vertexData)); // 書き込むためのアドレスを取得
-	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size()); // 頂点データをリソースにコピー
-
 	// 球モデルを作成
 	ModelData sphereModelData = CreateSphereModelData(16, 1.0f);
-
-	// 球の頂点リソースを作る
-	Microsoft::WRL::ComPtr<ID3D12Resource> sphereVertexResource = CreateBufferResource(device, sizeof(VertexData) * sphereModelData.vertices.size());
-
-	// 球の頂点バッファビューを作成
-	D3D12_VERTEX_BUFFER_VIEW sphereVertexBufferView{};
-
-	sphereVertexBufferView.BufferLocation = sphereVertexResource->GetGPUVirtualAddress();
-	sphereVertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * sphereModelData.vertices.size());
-	sphereVertexBufferView.StrideInBytes = sizeof(VertexData);
-
-	// 球の頂点リソースにデータを書き込む
-	VertexData *sphereVertexData = nullptr;
-	sphereVertexResource->Map(0, nullptr, reinterpret_cast<void **>(&sphereVertexData));
-
-	std::memcpy(sphereVertexData, sphereModelData.vertices.data(), sizeof(VertexData) * sphereModelData.vertices.size());
+	ModelData multiSphereModelData = CreateMultiMeshSphereModelData(16, 1.0f);
 
 	// Sprite用の頂点リソースを作る
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
@@ -1573,27 +1662,35 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 読み込み済みモデル一覧
 	std::vector<ModelResource> modelResources;
 
-	ModelResource planeModel{};
-	planeModel.name = "plane";
-	planeModel.modelData = modelData;
-	planeModel.vertexResource = vertexResource;
-	planeModel.vertexBufferView = vertexBufferView;
-	planeModel.textureResource = textureResource2;
-	planeModel.textureSrvHandleGPU = textureSrvHandleGPU2;
-
-	modelResources.push_back(planeModel);
-
-	ModelResource sphereModel{};
-	sphereModel.name = "sphere";
-	sphereModel.modelData = sphereModelData;
-	sphereModel.vertexResource = sphereVertexResource;
-	sphereModel.vertexBufferView = sphereVertexBufferView;
-
-	// 球はuvCheckerテクスチャを使う
-	sphereModel.textureResource = textureResource;
-	sphereModel.textureSrvHandleGPU = textureSrvHandleGPU;
-
-	modelResources.push_back(sphereModel);
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"plane",
+			modelData,
+			textureResource2,
+			textureSrvHandleGPU2
+		)
+	);
+	
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"sphere",
+			sphereModelData,
+			textureResource,
+			textureSrvHandleGPU
+		)
+	);
+	
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"multiSphere",
+			multiSphereModelData,
+			textureResource,
+			textureSrvHandleGPU
+		)
+	);
 
 
 	// ===========================================================
@@ -1860,9 +1957,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// サウンドのキー説明
 			ImGui::Text("Press SPACE key : Play Sound");
 
+			// ゲームパッドのキー説明
 			ImGui::SeparatorText("GamePad");
 			ImGui::Text("GamePad : %s", isGamePadConnected ? "Connected" : "Not Connected");
-			ImGui::Text("Right Stick : Pivot Rotate Camera");
+			ImGui::Text("Left Stick : Pivot Rotate Camera");
 			ImGui::Text("LT / RT : Move Camera Z");
 			ImGui::Text("D-Pad : Move Camera XY");
 
@@ -1873,6 +1971,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			const char *modelNames[] = {
 				"plane",
 				"sphere",
+				"multiSphere",
 			};
 
 			ImGui::Combo("Create Model", &selectedModelIndex, modelNames, _countof(modelNames));
@@ -2063,8 +2162,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			for (Object3DInstance &object : objectInstances) {
 				ModelResource &model = modelResources[object.modelIndex];
 
-				commandList->IASetVertexBuffers(0, 1, &model.vertexBufferView);
-
 				// モデル用Materialを設定
 				commandList->SetGraphicsRootConstantBufferView(0, object.materialResource->GetGPUVirtualAddress());
 
@@ -2077,8 +2174,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				// DirectionalLightを設定
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 
+
 				// 描画
-				commandList->DrawInstanced(UINT(model.modelData.vertices.size()), 1, 0, 0);
+				for (MeshResource &mesh : model.meshes) {
+					commandList->IASetVertexBuffers(0, 1, &mesh.vertexBufferView);
+
+					commandList->DrawInstanced(UINT(mesh.vertices.size()), 1, 0, 0);
+				}
 			}
 
 			// Sprite用TextureをuvCheckerに戻す
