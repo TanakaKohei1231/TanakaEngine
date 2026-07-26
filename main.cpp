@@ -485,12 +485,21 @@ DirectX::ScratchImage LoadTexture(const std::string &filePath) {
 	// テクスチャファイルを読んでプログラムで扱えるようにする
 	DirectX::ScratchImage image{};
 	std::wstring filePathW = ConvertString(filePath);
+
 	HRESULT hr = DirectX::LoadFromWICFile(filePathW.c_str(), DirectX::WIC_FLAGS_FORCE_SRGB, nullptr, image);
 	assert(SUCCEEDED(hr));
+
+	const DirectX::TexMetadata &metadata = image.GetMetadata();
+
+	// 1x1のTextureはこれ以上小さいmipmapを作れないため、そのまま返す
+	if (metadata.width == 1 && metadata.height == 1) {
+		return image;
+	}
 
 	// ミニマップの作成
 	DirectX::ScratchImage mipImages{};
 	hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_SRGB, 0, mipImages);
+
 	assert(SUCCEEDED(hr));
 
 	// ミニマップ付きのデータを返す
@@ -773,17 +782,32 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 				}
 
 				assert(elementIndices[0] != 0);
-				assert(elementIndices[1] != 0);
-				assert(elementIndices[2] != 0);
+				assert(elementIndices[0] <= positions.size());
 
 				Vector4 position = positions[elementIndices[0] - 1];
-				Vector2 texcoord = texcoords[elementIndices[1] - 1];
-				Vector3 normal = normals[elementIndices[2] - 1];
+
+				// UVが無いOBJもあるため、無い場合は(0, 0)を入れる
+				Vector2 texcoord = {0.0f, 0.0f};
+
+				if (elementIndices[1] != 0) {
+					assert(elementIndices[1] <= texcoords.size());
+
+					texcoord = texcoords[elementIndices[1] - 1];
+					texcoord.x = 1.0f - texcoord.x;
+					texcoord.y = 1.0f - texcoord.y;
+				}
+
+				// 法線が無い場合の保険
+				Vector3 normal = {0.0f, 0.0f, 1.0f};
+
+				if (elementIndices[2] != 0) {
+					assert(elementIndices[2] <= normals.size());
+
+					normal = normals[elementIndices[2] - 1];
+					normal.x *= -1.0f;
+				}
 
 				position.x *= -1.0f;
-				normal.x *= -1.0f;
-				texcoord.x = 1.0f - texcoord.x;
-				texcoord.y = 1.0f - texcoord.y;
 
 				faceVertices.push_back({position, texcoord, normal});
 			}
@@ -1533,6 +1557,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 配布モデル
 	ModelData multiMeshModelData = LoadObjFile("resources", "multiMesh.obj");
 	ModelData multiMaterialModelData = LoadObjFile("resources", "multiMaterial.obj");
+	ModelData teapotModelData = LoadObjFile("resources", "teapot.obj");
+	ModelData bunnyModelData = LoadObjFile("resources", "bunny.obj");
+	ModelData suzanneModelData = LoadObjFile("resources", "suzanne.obj");
 
 	// Sprite用の頂点リソースを作る
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
@@ -1646,6 +1673,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	const DirectX::TexMetadata &monsterBallMetadata = monsterBallMipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> monsterBallTextureResource = CreateTextureResource(device, monsterBallMetadata);
 
+	// checkerBoardのTextureを読んで転送する
+	DirectX::ScratchImage checkerBoardMipImages = LoadTexture("resources/checkerBoard.png");
+	const DirectX::TexMetadata &checkerBoardMetadata = checkerBoardMipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> checkerBoardTextureResource = CreateTextureResource(device, checkerBoardMetadata);
+
+	// white1x1のTextureを読んで転送する
+	DirectX::ScratchImage white1x1MipImages = LoadTexture("resources/white1x1.png");
+	const DirectX::TexMetadata &white1x1Metadata = white1x1MipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> white1x1TextureResource = CreateTextureResource(device, white1x1Metadata);
+
 	// Texture転送用のCommandListを準備
 	hr = commandAllocator->Reset();
 	assert(SUCCEEDED(hr));
@@ -1659,6 +1696,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 = UploadTextureData(textureResource2, mipImages2, device, commandList);
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateMonsterBallResource = UploadTextureData(monsterBallTextureResource, monsterBallMipImages, device, commandList);
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateCheckerBoardResource = UploadTextureData(checkerBoardTextureResource, checkerBoardMipImages, device, commandList);
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateWhite1x1Resource = UploadTextureData(white1x1TextureResource, white1x1MipImages, device, commandList);
 
 	// CommandListをCloseし、CommandQueueにExecuteCommandListsを使いキックする
 	hr = commandList->Close();
@@ -1681,6 +1722,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	intermediateResource.Reset();
 	intermediateResource2.Reset();
 	intermediateMonsterBallResource.Reset();
+	intermediateCheckerBoardResource.Reset();
+	intermediateWhite1x1Resource.Reset();
 
 	// ===========================================================
 	// Texture用SRVの作成
@@ -1732,6 +1775,39 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// monsterBall用SRVの生成
 	device->CreateShaderResourceView(monsterBallTextureResource.Get(), &monsterBallSrvDesc, monsterBallTextureSrvHandleCPU);
 
+	// checkerBoardのmetadataを基にSRVの設定
+	D3D12_SHADER_RESOURCE_VIEW_DESC checkerBoardSrvDesc{};
+	checkerBoardSrvDesc.Format = checkerBoardMetadata.format;
+	checkerBoardSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	checkerBoardSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	checkerBoardSrvDesc.Texture2D.MipLevels = UINT(checkerBoardMetadata.mipLevels);
+	
+	// checkerBoard用のSRVを作成するDescriptorHeapの場所を決める
+	D3D12_CPU_DESCRIPTOR_HANDLE checkerBoardTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 4);
+	
+	D3D12_GPU_DESCRIPTOR_HANDLE checkerBoardTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 4);
+	
+	// checkerBoard用SRVの生成
+	device->CreateShaderResourceView(
+		checkerBoardTextureResource.Get(),
+		&checkerBoardSrvDesc,
+		checkerBoardTextureSrvHandleCPU
+	);
+
+	// white1x1のmetadataを基にSRVの設定
+	D3D12_SHADER_RESOURCE_VIEW_DESC white1x1SrvDesc{};
+	white1x1SrvDesc.Format = white1x1Metadata.format;
+	white1x1SrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	white1x1SrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	white1x1SrvDesc.Texture2D.MipLevels = UINT(white1x1Metadata.mipLevels);
+
+	// white1x1用のSRVを作成するDescriptorHeapの場所を決める
+	D3D12_CPU_DESCRIPTOR_HANDLE white1x1TextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 5);
+
+	D3D12_GPU_DESCRIPTOR_HANDLE white1x1TextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 5);
+
+	// white1x1用SRVの生成
+	device->CreateShaderResourceView(white1x1TextureResource.Get(), &white1x1SrvDesc, white1x1TextureSrvHandleCPU);
 
 	// 読み込み済みモデル一覧
 	std::vector<ModelResource> modelResources;
@@ -1750,6 +1826,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	monsterBallMaterial.name = "monsterBall";
 	monsterBallMaterial.textureResource = monsterBallTextureResource;
 	monsterBallMaterial.textureSrvHandleGPU = monsterBallTextureSrvHandleGPU;
+
+	ModelMaterialResource checkerBoardMaterial{};
+	checkerBoardMaterial.name = "checkerBoard";
+	checkerBoardMaterial.textureResource = checkerBoardTextureResource;
+	checkerBoardMaterial.textureSrvHandleGPU = checkerBoardTextureSrvHandleGPU;
+
+	ModelMaterialResource white1x1Material{};
+	white1x1Material.name = "white1x1";
+	white1x1Material.textureResource = white1x1TextureResource;
+	white1x1Material.textureSrvHandleGPU = white1x1TextureSrvHandleGPU;
 
 
 	modelResources.push_back(
@@ -1785,6 +1871,33 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			"multiMaterial",
 			multiMaterialModelData,
 			std::vector<ModelMaterialResource>{uvCheckerMaterial, monsterBallMaterial}
+		)
+	);
+
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"teapot",
+			teapotModelData,
+			std::vector<ModelMaterialResource>{checkerBoardMaterial}
+		)
+	);
+	
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"bunny",
+			bunnyModelData,
+			std::vector<ModelMaterialResource>{uvCheckerMaterial}
+		)
+	);
+	
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"suzanne",
+			suzanneModelData,
+			std::vector<ModelMaterialResource>{white1x1Material}
 		)
 	);
 
