@@ -27,6 +27,7 @@
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
 #include <Xinput.h>
+#include <unordered_map>
 #include "DebugCamera.h"
 #include"Input.h"
 
@@ -65,7 +66,8 @@ enum LightingType {
 enum ModelType {
 	MODEL_PLANE,
 	MODEL_SPHERE,
-	MODEL_MULTI_SPHERE,
+	MODEL_MULTI_MESH,
+	MODEL_MULTI_MATERIAL,
 	MODEL_COUNT,
 };
 
@@ -98,17 +100,19 @@ struct DirectionalLight {
 };
 
 struct MaterialData {
+	std::string name;
 	std::string textureFilePath;
 };
 
 struct MeshData {
 	std::string name;
 	std::vector<VertexData> vertices;
+	uint32_t materialIndex = 0;
 };
 
 struct ModelData {
 	std::vector<MeshData> meshes;
-	MaterialData material;
+	std::vector<MaterialData> materials;
 };
 
 struct D3DResourceLeakChecker {
@@ -151,9 +155,16 @@ struct SoundData {
 	unsigned int bufferSize;
 };
 
+struct ModelMaterialResource {
+	std::string name;
+	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource;
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU;
+};
+
 struct MeshResource {
 	std::string name;
 	std::vector<VertexData> vertices;
+	uint32_t materialIndex = 0;
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource;
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 };
@@ -162,13 +173,14 @@ struct ModelResource {
 	std::string name;
 	ModelData modelData;
 	std::vector<MeshResource> meshes;
-	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource;
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU;
+	std::vector<ModelMaterialResource> materials;  // モデルが持つマテリアル一覧
 };
 
 struct Object3DInstance {
 	int32_t modelIndex;
 	Transform transform;
+
+	Transform uvTransform;  // ObjectごとのUVTransform
 	Vector4 color;
 	int32_t lightingType;
 
@@ -408,6 +420,7 @@ MeshResource CreateMeshResource(const Microsoft::WRL::ComPtr<ID3D12Device> &devi
 
 	meshResource.name = meshData.name;
 	meshResource.vertices = meshData.vertices;
+	meshResource.materialIndex = meshData.materialIndex;
 
 	meshResource.vertexResource = CreateBufferResource(device, sizeof(VertexData) * meshResource.vertices.size());
 
@@ -427,17 +440,18 @@ MeshResource CreateMeshResource(const Microsoft::WRL::ComPtr<ID3D12Device> &devi
 }
 
 ModelResource CreateModelResource(
-	const Microsoft::WRL::ComPtr<ID3D12Device> &device, const std::string &name,
+	const Microsoft::WRL::ComPtr<ID3D12Device> &device,
+	const std::string &name,
 	const ModelData &modelData,
-	const Microsoft::WRL::ComPtr<ID3D12Resource> &textureResource,
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU
+	const std::vector<ModelMaterialResource> &materials
 ) {
 	ModelResource modelResource{};
 
 	modelResource.name = name;
 	modelResource.modelData = modelData;
-	modelResource.textureResource = textureResource;
-	modelResource.textureSrvHandleGPU = textureSrvHandleGPU;
+	modelResource.materials = materials;
+
+	assert(!modelResource.materials.empty());
 
 	for (const MeshData &meshData : modelData.meshes) {
 		modelResource.meshes.push_back(CreateMeshResource(device, meshData));
@@ -615,27 +629,43 @@ D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(
 	return handleGPU;
 }
 
-MaterialData LoadMaterialTemplateFile(const std::string &directoryPath, const std::string &filename) {
-	MaterialData materialData;                          // 構築するMaterialData
-	std::string line;                                   // ファイルから読んだ1行を格納するもの
-	std::ifstream file(directoryPath + "/" + filename); // ファイルを開く
-	assert(file.is_open());                             // とりあえず開けなかったら止める
+std::vector<MaterialData> LoadMaterialTemplateFile(const std::string &directoryPath, const std::string &filename) {
+	std::vector<MaterialData> materials;
+	MaterialData currentMaterial{};
+
+	bool hasMaterial = false;
+	std::string line;
+
+	std::ifstream file(directoryPath + "/" + filename);
+	assert(file.is_open());
 
 	while (std::getline(file, line)) {
 		std::string identifier;
 		std::istringstream s(line);
 		s >> identifier;
 
-		// identifierに応じた処理
-		if (identifier == "map_Kd") {
+		if (identifier == "newmtl") {
+			if (hasMaterial) {
+				materials.push_back(currentMaterial);
+				currentMaterial = {};
+			}
+
+			s >> currentMaterial.name;
+			hasMaterial = true;
+
+		} else if (identifier == "map_Kd") {
 			std::string textureFilename;
 			s >> textureFilename;
-			// 連結してファイルパスにする
-			materialData.textureFilePath = directoryPath + "/" + textureFilename;
+
+			currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
 		}
 	}
 
-	return materialData;
+	if (hasMaterial) {
+		materials.push_back(currentMaterial);
+	}
+
+	return materials;
 }
 
 ModelData LoadObjFile(const std::string &directoryPath, const std::string &filename) {
@@ -643,13 +673,29 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 	std::vector<Vector4> positions; // 位置
 	std::vector<Vector3> normals;   // 法線
 	std::vector<Vector2> texcoords; // テクスチャ座標
-	std::string line;               // ファイルから読んだ1行を格納するもの
+	std::unordered_map<std::string, uint32_t> materialIndexMap;
+
+	std::string line;
 
 	std::ifstream file(directoryPath + "/" + filename);
 	assert(file.is_open());
 
+	uint32_t currentMaterialIndex = 0;
+	std::string currentMeshName = "default";
+
 	MeshData currentMesh{};
-	currentMesh.name = "default";
+	currentMesh.name = currentMeshName;
+	currentMesh.materialIndex = currentMaterialIndex;
+
+	auto PushCurrentMesh = [&]() {
+		if (!currentMesh.vertices.empty()) {
+			modelData.meshes.push_back(currentMesh);
+
+			currentMesh = {};
+			currentMesh.name = currentMeshName;
+			currentMesh.materialIndex = currentMaterialIndex;
+		}
+	};
 
 	while (std::getline(file, line)) {
 		std::string identifier;
@@ -659,20 +705,39 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 		if (identifier == "mtllib") {
 			std::string materialFilename;
 			s >> materialFilename;
-			modelData.material = LoadMaterialTemplateFile(directoryPath, materialFilename);
+
+			modelData.materials = LoadMaterialTemplateFile(directoryPath, materialFilename);
+
+			for (uint32_t materialIndex = 0; materialIndex < modelData.materials.size(); ++materialIndex) {
+				materialIndexMap[modelData.materials[materialIndex].name] = materialIndex;
+			}
+
+		} else if (identifier == "usemtl") {
+			PushCurrentMesh();
+
+			std::string materialName;
+			s >> materialName;
+
+			if (materialIndexMap.contains(materialName)) {
+				currentMaterialIndex = materialIndexMap[materialName];
+			} else {
+				currentMaterialIndex = 0;
+			}
+
+			currentMesh.name = currentMeshName + "_" + materialName;
+			currentMesh.materialIndex = currentMaterialIndex;
 
 		} else if (identifier == "o" || identifier == "g") {
-			// すでに頂点が入っているなら、現在のメッシュを確定する
-			if (!currentMesh.vertices.empty()) {
-				modelData.meshes.push_back(currentMesh);
-				currentMesh = {};
+			PushCurrentMesh();
+
+			s >> currentMeshName;
+
+			if (currentMeshName.empty()) {
+				currentMeshName = "mesh";
 			}
 
-			s >> currentMesh.name;
-
-			if (currentMesh.name.empty()) {
-				currentMesh.name = "mesh";
-			}
+			currentMesh.name = currentMeshName;
+			currentMesh.materialIndex = currentMaterialIndex;
 
 		} else if (identifier == "v") {
 			Vector4 position;
@@ -691,20 +756,25 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 			normals.push_back(normal);
 
 		} else if (identifier == "f") {
-			VertexData triangle[3];
+			std::vector<VertexData> faceVertices;
+			std::string vertexDefinition;
 
-			for (int32_t faceVertex = 0; faceVertex < 3; ++faceVertex) {
-				std::string vertexDefinition;
-				s >> vertexDefinition;
-
+			while (s >> vertexDefinition) {
 				std::istringstream v(vertexDefinition);
 				uint32_t elementIndices[3] = {};
 
 				for (int32_t element = 0; element < 3; ++element) {
 					std::string index;
 					std::getline(v, index, '/');
-					elementIndices[element] = std::stoi(index);
+
+					if (!index.empty()) {
+						elementIndices[element] = static_cast<uint32_t>(std::stoi(index));
+					}
 				}
+
+				assert(elementIndices[0] != 0);
+				assert(elementIndices[1] != 0);
+				assert(elementIndices[2] != 0);
 
 				Vector4 position = positions[elementIndices[0] - 1];
 				Vector2 texcoord = texcoords[elementIndices[1] - 1];
@@ -715,25 +785,23 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 				texcoord.x = 1.0f - texcoord.x;
 				texcoord.y = 1.0f - texcoord.y;
 
-				triangle[faceVertex] = {position, texcoord, normal};
+				faceVertices.push_back({position, texcoord, normal});
 			}
 
-			// 資料の手順では頂点を逆順で登録することで、回り順を逆にする。
-			// しかし、このplane.objではx反転の時点で三角形の回り順も反転するため、
-			// さらに逆順登録すると現在のカリング設定で裏面扱いになり表示されなかった。
-			// そのため、今回想定しているplane.objでは逆順登録は行わない。
-			currentMesh.vertices.push_back(triangle[0]);
-			currentMesh.vertices.push_back(triangle[1]);
-			currentMesh.vertices.push_back(triangle[2]);
+			// 三角形以外の面も三角形に分割して登録する
+			for (uint32_t vertexIndex = 1; vertexIndex + 1 < faceVertices.size(); ++vertexIndex) {
+				currentMesh.vertices.push_back(faceVertices[0]);
+				currentMesh.vertices.push_back(faceVertices[vertexIndex]);
+				currentMesh.vertices.push_back(faceVertices[vertexIndex + 1]);
+			}
 		}
 	}
 
-	if (!currentMesh.vertices.empty()) {
-		modelData.meshes.push_back(currentMesh);
-	}
+	PushCurrentMesh();
 
 	return modelData;
 }
+
 
 ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 	ModelData modelData{};
@@ -827,10 +895,12 @@ ModelData CreateMultiMeshSphereModelData(uint32_t subdivision, float radius) {
 
 	MeshData leftSphereMesh = baseSphereModelData.meshes[0];
 	leftSphereMesh.name = "leftSphere";
+	leftSphereMesh.materialIndex = 0;
 	OffsetMesh(leftSphereMesh, {-1.2f, 0.0f, 0.0f});
 
 	MeshData rightSphereMesh = baseSphereModelData.meshes[0];
 	rightSphereMesh.name = "rightSphere";
+	rightSphereMesh.materialIndex = 1;
 	OffsetMesh(rightSphereMesh, {1.2f, 0.0f, 0.0f});
 
 	modelData.meshes.push_back(leftSphereMesh);
@@ -945,14 +1015,20 @@ void SoundPlayWave(IXAudio2 *xAudio2, const SoundData &soundData) {
 }
 
 
-Object3DInstance CreateObject3DInstance(const Microsoft::WRL::ComPtr<ID3D12Device> &device, int32_t modelIndex,
-                                        const Transform &transform) {
+Object3DInstance CreateObject3DInstance(
+	const Microsoft::WRL::ComPtr<ID3D12Device> &device, int32_t modelIndex,
+	const Transform &transform
+) {
+
 	Object3DInstance object{};
 
 	object.modelIndex = modelIndex;
 	object.transform = transform;
 	object.color = {1.0f, 1.0f, 1.0f, 1.0f};
 	object.lightingType = LIGHTING_HALF_LAMBERT;
+	object.uvTransform.scale = {1.0f, 1.0f, 1.0f};
+	object.uvTransform.rotate = {0.0f, 0.0f, 0.0f};
+	object.uvTransform.translate = {0.0f, 0.0f, 0.0f};
 
 	// マテリアル用リソースを作成
 	object.materialResource = CreateBufferResource(device, sizeof(Material));
@@ -1377,7 +1453,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	// 裏面（時計回り）を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 	// 三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
@@ -1482,9 +1558,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// モデル読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
 
-	// 球モデルを作成
 	ModelData sphereModelData = CreateSphereModelData(16, 1.0f);
-	ModelData multiSphereModelData = CreateMultiMeshSphereModelData(16, 1.0f);
+
+	// 配布モデル
+	ModelData multiMeshModelData = LoadObjFile("resources", "multiMesh.obj");
+	ModelData multiMaterialModelData = LoadObjFile("resources", "multiMaterial.obj");
 
 	// Sprite用の頂点リソースを作る
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
@@ -1587,9 +1665,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
 
 	// 2枚目のTextureを読んで転送する
-	DirectX::ScratchImage mipImages2 = LoadTexture(modelData.material.textureFilePath);
+	assert(!modelData.materials.empty());
+
+	DirectX::ScratchImage mipImages2 = LoadTexture(modelData.materials[0].textureFilePath);
 	const DirectX::TexMetadata &metadata2 = mipImages2.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
+
+	// monsterBallのTextureを読んで転送する
+	DirectX::ScratchImage monsterBallMipImages = LoadTexture("resources/monsterBall.png");
+	const DirectX::TexMetadata &monsterBallMetadata = monsterBallMipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> monsterBallTextureResource = CreateTextureResource(device, monsterBallMetadata);
 
 	// Texture転送用のCommandListを準備
 	hr = commandAllocator->Reset();
@@ -1599,11 +1684,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	assert(SUCCEEDED(hr));
 
 	// Textureデータを転送するコマンドを積む
-	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource =
-	    UploadTextureData(textureResource, mipImages, device, commandList);
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = UploadTextureData(textureResource, mipImages, device, commandList);
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 =
-	    UploadTextureData(textureResource2, mipImages2, device, commandList);
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 = UploadTextureData(textureResource2, mipImages2, device, commandList);
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateMonsterBallResource = UploadTextureData(monsterBallTextureResource, monsterBallMipImages, device, commandList);
 
 	// CommandListをCloseし、CommandQueueにExecuteCommandListsを使いキックする
 	hr = commandList->Close();
@@ -1625,50 +1710,84 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ここまできたら転送は終わっているので、IntermediateResourceは解放しても良い
 	intermediateResource.Reset();
 	intermediateResource2.Reset();
+	intermediateMonsterBallResource.Reset();
 
-	// metaDataを基にSRVの設定
+	// ===========================================================
+	// Texture用SRVの作成
+	// ===========================================================
+
+	// uvCheckerのmetadataを基にSRVの設定
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
 	srvDesc.Format = metadata.format;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels);
 
-	// SRVを作成するDescriptorHeapの場所を決める
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+	// uvChecker用のSRVを作成するDescriptorHeapの場所を決める
+	// index 0 はImGuiが使うため、index 1 を使う
+	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
 
-	// metadataを基にSRVの設定
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
+
+	// uvChecker用SRVの生成
+	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
+
+	// planeTextureのmetadataを基にSRVの設定
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2{};
 	srvDesc2.Format = metadata2.format;
 	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc2.Texture2D.MipLevels = UINT(metadata2.mipLevels);
 
-	// SRVを作成するDescriptorHeapの場所を決める
+	// planeTexture用のSRVを作成するDescriptorHeapの場所を決める
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 
-	// SRVの生成
+	// planeTexture用SRVの生成
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 
-	// 先頭はImGuiが使っているのでその次を使う
-	textureSrvHandleCPU.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	textureSrvHandleGPU.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	// monsterBallのmetadataを基にSRVの設定
+	D3D12_SHADER_RESOURCE_VIEW_DESC monsterBallSrvDesc{};
+	monsterBallSrvDesc.Format = monsterBallMetadata.format;
+	monsterBallSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	monsterBallSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	monsterBallSrvDesc.Texture2D.MipLevels = UINT(monsterBallMetadata.mipLevels);
 
-	// SRVの生成
-	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
+	// monsterBall用のSRVを作成するDescriptorHeapの場所を決める
+	D3D12_CPU_DESCRIPTOR_HANDLE monsterBallTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+
+	D3D12_GPU_DESCRIPTOR_HANDLE monsterBallTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+
+	// monsterBall用SRVの生成
+	device->CreateShaderResourceView(monsterBallTextureResource.Get(), &monsterBallSrvDesc, monsterBallTextureSrvHandleCPU);
+
 
 	// 読み込み済みモデル一覧
 	std::vector<ModelResource> modelResources;
+
+	ModelMaterialResource uvCheckerMaterial{};
+	uvCheckerMaterial.name = "uvChecker";
+	uvCheckerMaterial.textureResource = textureResource;
+	uvCheckerMaterial.textureSrvHandleGPU = textureSrvHandleGPU;
+
+	ModelMaterialResource planeMaterial{};
+	planeMaterial.name = "planeTexture";
+	planeMaterial.textureResource = textureResource2;
+	planeMaterial.textureSrvHandleGPU = textureSrvHandleGPU2;
+
+	ModelMaterialResource monsterBallMaterial{};
+	monsterBallMaterial.name = "monsterBall";
+	monsterBallMaterial.textureResource = monsterBallTextureResource;
+	monsterBallMaterial.textureSrvHandleGPU = monsterBallTextureSrvHandleGPU;
+
 
 	modelResources.push_back(
 		CreateModelResource(
 			device,
 			"plane",
 			modelData,
-			textureResource2,
-			textureSrvHandleGPU2
+			std::vector<ModelMaterialResource>{planeMaterial}
 		)
 	);
 	
@@ -1677,18 +1796,25 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			device,
 			"sphere",
 			sphereModelData,
-			textureResource,
-			textureSrvHandleGPU
+			std::vector<ModelMaterialResource>{uvCheckerMaterial}
 		)
 	);
 	
 	modelResources.push_back(
 		CreateModelResource(
 			device,
-			"multiSphere",
-			multiSphereModelData,
-			textureResource,
-			textureSrvHandleGPU
+			"multiMesh",
+			multiMeshModelData,
+			std::vector<ModelMaterialResource>{uvCheckerMaterial}
+		)
+	);
+	
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"multiMaterial",
+			multiMaterialModelData,
+			std::vector<ModelMaterialResource>{uvCheckerMaterial, monsterBallMaterial}
 		)
 	);
 
@@ -1819,8 +1945,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	uvTransformSprite.scale = {1.0f, 1.0f, 1.0f};
 	uvTransformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	uvTransformSprite.translate = {0.0f, 0.0f, 0.0f};
-
-	bool useMonsterBall = false;
 
 	// ライティング方式
 	int lightingType = LIGHTING_HALF_LAMBERT;
@@ -1964,17 +2088,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui::Text("LT / RT : Move Camera Z");
 			ImGui::Text("D-Pad : Move Camera XY");
 
-			ImGui::Checkbox("useMonsterBall", &useMonsterBall);
-
 			ImGui::SeparatorText("Model Create");
 
-			const char *modelNames[] = {
-				"plane",
-				"sphere",
-				"multiSphere",
-			};
+			std::vector<const char *> modelNames;
 
-			ImGui::Combo("Create Model", &selectedModelIndex, modelNames, _countof(modelNames));
+			for (ModelResource &modelResource : modelResources) {
+				modelNames.push_back(modelResource.name.c_str());
+			}
+
+			if (selectedModelIndex < 0 || selectedModelIndex >= static_cast<int32_t>(modelResources.size())) {
+				selectedModelIndex = 0;
+			}
+
+			ImGui::Combo("Create Model", &selectedModelIndex, modelNames.data(), static_cast<int32_t>(modelNames.size()));
 
 			if (ImGui::Button("Create")) {
 				Transform newObjectTransform{};
@@ -2007,6 +2133,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 					ImGui::DragFloat3("Rotate", &object.transform.rotate.x, 0.01f);
 					ImGui::DragFloat3("Scale", &object.transform.scale.x, 0.01f);
 
+					if (ImGui::TreeNode("UVTransform")) {
+						ImGui::DragFloat2("UV Translate", &object.uvTransform.translate.x, 0.01f, -10.0f, 10.0f);
+						ImGui::DragFloat2("UV Scale", &object.uvTransform.scale.x, 0.01f, -10.0f, 10.0f);
+						ImGui::SliderAngle("UV Rotate", &object.uvTransform.rotate.z);
+
+						ImGui::TreePop();
+					}
+
 					if (ImGui::Button("Delete")) {
 						shouldDelete = true;
 					}
@@ -2027,13 +2161,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				ImGui::DragFloat3("Rotate##Sprite", &transformSprite.rotate.x, 0.01f);
 				ImGui::DragFloat3("Scale##Sprite", &transformSprite.scale.x, 0.01f);
 				ImGui::TreePop();
-			}
 
-			if (ImGui::TreeNode("UVTransform")) {
-				ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
-				ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
-				ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
-				ImGui::TreePop();
+				if (ImGui::TreeNode("UVTransform")) {
+					ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
+					ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
+					ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
+					ImGui::TreePop();
+				}
 			}
 
 			ImGui::Combo("Lighting Type", &lightingType, lightingTypeItems, _countof(lightingTypeItems));
@@ -2060,7 +2194,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 				object.materialData->color = object.color;
 				object.materialData->lightingType = object.lightingType;
-				object.materialData->uvTransform = Matrix4x4::MakeIdentity4x4();
+
+				Matrix4x4 objectUvTransformMatrix = Matrix4x4::MakeScaleMatrix(object.uvTransform.scale);
+				objectUvTransformMatrix = Matrix4x4::Multiply(objectUvTransformMatrix, Matrix4x4::MakeRotateZMatrix(object.uvTransform.rotate.z));
+				objectUvTransformMatrix = Matrix4x4::Multiply(objectUvTransformMatrix, Matrix4x4::MakeTranslateMatrix(object.uvTransform.translate));
+
+				object.materialData->uvTransform = objectUvTransformMatrix;
 			}
 
 			// Sprite用のWorldViewProjectionMatrixを作る
@@ -2168,17 +2307,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				// モデル用WVPを設定
 				commandList->SetGraphicsRootConstantBufferView(1, object.wvpResource->GetGPUVirtualAddress());
 
-				// モデル用Textureを設定
-				commandList->SetGraphicsRootDescriptorTable(2, model.textureSrvHandleGPU);
-
 				// DirectionalLightを設定
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 
-
-				// 描画
 				for (MeshResource &mesh : model.meshes) {
+					assert(mesh.materialIndex < model.materials.size());
+
+					ModelMaterialResource &material = model.materials[mesh.materialIndex];
+
 					commandList->IASetVertexBuffers(0, 1, &mesh.vertexBufferView);
 
+					// Meshごとにマテリアル、今回はテクスチャを切り替える
+					commandList->SetGraphicsRootDescriptorTable(2, material.textureSrvHandleGPU);
+
+					// 描画
 					commandList->DrawInstanced(UINT(mesh.vertices.size()), 1, 0, 0);
 				}
 			}
