@@ -71,6 +71,19 @@ enum ModelType {
 	MODEL_COUNT,
 };
 
+
+// ブレンドモード
+enum BlendMode {
+	BLEND_MODE_NONE,
+	BLEND_MODE_NORMAL,
+	BLEND_MODE_ADD,
+	BLEND_MODE_SUBTRACT,
+	BLEND_MODE_MULTIPLY,
+	BLEND_MODE_SCREEN,
+
+	BLEND_MODE_COUNT,
+};
+
 struct Vector4 {
 	float x, y, z, w;
 };
@@ -183,6 +196,7 @@ struct Object3DInstance {
 	Transform uvTransform;  // ObjectごとのUVTransform
 	Vector4 color;
 	int32_t lightingType;
+	int32_t blendMode = BLEND_MODE_NORMAL;
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> materialResource;
 	Material *materialData;
@@ -917,6 +931,72 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 	return modelData;
 }
 
+D3D12_BLEND_DESC CreateBlendDesc(BlendMode blendMode) {
+	D3D12_BLEND_DESC blendDesc{};
+
+	D3D12_RENDER_TARGET_BLEND_DESC &renderTargetBlendDesc = blendDesc.RenderTarget[0];
+
+	renderTargetBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	// ブレンドなしの状態を基本設定にする
+	renderTargetBlendDesc.BlendEnable = FALSE;
+	renderTargetBlendDesc.SrcBlend = D3D12_BLEND_ONE;
+	renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+	renderTargetBlendDesc.DestBlend = D3D12_BLEND_ZERO;
+
+	// アルファ値
+	renderTargetBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+	renderTargetBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	renderTargetBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+
+	switch (blendMode) {
+	case BLEND_MODE_NONE:
+		renderTargetBlendDesc.BlendEnable = FALSE;
+		break;
+
+	case BLEND_MODE_NORMAL:
+		renderTargetBlendDesc.BlendEnable = TRUE;
+		renderTargetBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+		renderTargetBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+		break;
+
+	case BLEND_MODE_ADD:
+		renderTargetBlendDesc.BlendEnable = TRUE;
+		renderTargetBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+		renderTargetBlendDesc.DestBlend = D3D12_BLEND_ONE;
+		break;
+
+	case BLEND_MODE_SUBTRACT:
+		renderTargetBlendDesc.BlendEnable = TRUE;
+		renderTargetBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+		renderTargetBlendDesc.DestBlend = D3D12_BLEND_ONE;
+		break;
+
+	case BLEND_MODE_MULTIPLY:
+		renderTargetBlendDesc.BlendEnable = TRUE;
+		renderTargetBlendDesc.SrcBlend = D3D12_BLEND_DEST_COLOR;
+		renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+		renderTargetBlendDesc.DestBlend = D3D12_BLEND_ZERO;
+		break;
+
+	case BLEND_MODE_SCREEN:
+		renderTargetBlendDesc.BlendEnable = TRUE;
+		renderTargetBlendDesc.SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+		renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+		renderTargetBlendDesc.DestBlend = D3D12_BLEND_ONE;
+		break;
+
+	default:
+		renderTargetBlendDesc.BlendEnable = FALSE;
+		break;
+	}
+
+	return blendDesc;
+}
+
 SoundData SoundLoadWave(const char *filename) {
 	// ファイル入力ストリームのインスタンス
 	std::ifstream file;
@@ -1450,17 +1530,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	inputLayoutDesc.NumElements = _countof(inputElementDescs);
 
 	// BlendStateの設定
-	D3D12_BLEND_DESC blendDesc{};
-	// 全ての色要素を書き込む
-	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-	blendDesc.RenderTarget[0].BlendEnable = TRUE;
-	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	std::vector<D3D12_BLEND_DESC> blendDescs{};
+	blendDescs.reserve(BLEND_MODE_COUNT);
 
+	for (int32_t blendMode = 0; blendMode < BLEND_MODE_COUNT; ++blendMode) {
+		blendDescs.push_back(CreateBlendDesc(static_cast<BlendMode>(blendMode)));
+	}
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -1489,30 +1564,31 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
 	// PSOの設定
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
-	graphicsPipelineStateDesc.pRootSignature = rootSignature.Get();
-	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc;
-	graphicsPipelineStateDesc.VS = { vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize() };
-	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() };
-	graphicsPipelineStateDesc.BlendState = blendDesc;
-	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;
-	graphicsPipelineStateDesc.NumRenderTargets = 1;
-	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-	graphicsPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	graphicsPipelineStateDesc.SampleDesc.Count = 1;
-	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+	std::vector<Microsoft::WRL::ComPtr<ID3D12PipelineState>> graphicsPipelineStates{};
+	graphicsPipelineStates.resize(BLEND_MODE_COUNT);
 
-	// DepthStencilの設定
-	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
-	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	for (int32_t blendMode = 0; blendMode < BLEND_MODE_COUNT; ++blendMode) {
+		D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
+		graphicsPipelineStateDesc.pRootSignature = rootSignature.Get();
+		graphicsPipelineStateDesc.InputLayout = inputLayoutDesc;
+		graphicsPipelineStateDesc.VS = {vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize()};
+		graphicsPipelineStateDesc.PS = {pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize()};
+		graphicsPipelineStateDesc.BlendState = blendDescs[blendMode];
+		graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;
+		graphicsPipelineStateDesc.NumRenderTargets = 1;
+		graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+		graphicsPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+		graphicsPipelineStateDesc.SampleDesc.Count = 1;
+		graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
-	// 実際に生成
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
-	hr = device->CreateGraphicsPipelineState(
-		&graphicsPipelineStateDesc,
-		IID_PPV_ARGS(graphicsPipelineState.GetAddressOf())
-	);
-	assert(SUCCEEDED(hr));
+		// DepthStencilの設定
+		graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
+		graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+		// 実際に生成
+		hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(graphicsPipelineStates[blendMode].GetAddressOf()));
+		assert(SUCCEEDED(hr));
+	}
 
 	// マテリアル用のリソースを作る。今回はcolorを1つ分のサイズを用意する
 	Microsoft::WRL::ComPtr<ID3D12Resource> materialResource = CreateBufferResource(device, sizeof(Material));
@@ -1578,6 +1654,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ModelData teapotModelData = LoadObjFile("resources", "teapot.obj");
 	ModelData bunnyModelData = LoadObjFile("resources", "bunny.obj");
 	ModelData suzanneModelData = LoadObjFile("resources", "suzanne.obj");
+	ModelData fenceModelData = LoadObjFile("resources", "fence.obj");
 
 	// Sprite用の頂点リソースを作る
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
@@ -1701,6 +1778,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	const DirectX::TexMetadata &white1x1Metadata = white1x1MipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> white1x1TextureResource = CreateTextureResource(device, white1x1Metadata);
 
+	// fenceのTextureを読んで転送する
+	DirectX::ScratchImage fenceMipImages = LoadTexture("resources/fence.png");
+	const DirectX::TexMetadata &fenceMetadata = fenceMipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> fenceTextureResource = CreateTextureResource(device, fenceMetadata);
+
 	// Texture転送用のCommandListを準備
 	hr = commandAllocator->Reset();
 	assert(SUCCEEDED(hr));
@@ -1718,6 +1800,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateCheckerBoardResource = UploadTextureData(checkerBoardTextureResource, checkerBoardMipImages, device, commandList);
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateWhite1x1Resource = UploadTextureData(white1x1TextureResource, white1x1MipImages, device, commandList);
+	
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateFenceResource = UploadTextureData(fenceTextureResource, fenceMipImages, device, commandList);
 
 	// CommandListをCloseし、CommandQueueにExecuteCommandListsを使いキックする
 	hr = commandList->Close();
@@ -1742,6 +1826,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	intermediateMonsterBallResource.Reset();
 	intermediateCheckerBoardResource.Reset();
 	intermediateWhite1x1Resource.Reset();
+	intermediateFenceResource.Reset();
 
 	// ===========================================================
 	// Texture用SRVの作成
@@ -1827,6 +1912,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// white1x1用SRVの生成
 	device->CreateShaderResourceView(white1x1TextureResource.Get(), &white1x1SrvDesc, white1x1TextureSrvHandleCPU);
 
+	// fenceのmetadataを基にSRVの設定
+	D3D12_SHADER_RESOURCE_VIEW_DESC fenceSrvDesc{};
+	fenceSrvDesc.Format = fenceMetadata.format;
+	fenceSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	fenceSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	fenceSrvDesc.Texture2D.MipLevels = UINT(fenceMetadata.mipLevels);
+
+	// fence用のSRVを作成するDescriptorHeapの場所を決める
+	D3D12_CPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleCPU =
+	    GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
+
+	D3D12_GPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
+
+	// fence用SRVの生成
+	device->CreateShaderResourceView(fenceTextureResource.Get(), &fenceSrvDesc, fenceTextureSrvHandleCPU);
+
 	// 読み込み済みモデル一覧
 	std::vector<ModelResource> modelResources;
 
@@ -1854,6 +1955,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	white1x1Material.name = "white1x1";
 	white1x1Material.textureResource = white1x1TextureResource;
 	white1x1Material.textureSrvHandleGPU = white1x1TextureSrvHandleGPU;
+
+	ModelMaterialResource fenceMaterial{};
+	fenceMaterial.name = "fence";
+	fenceMaterial.textureResource = fenceTextureResource;
+	fenceMaterial.textureSrvHandleGPU = fenceTextureSrvHandleGPU;
 
 
 	modelResources.push_back(
@@ -1916,6 +2022,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			"suzanne",
 			suzanneModelData,
 			std::vector<ModelMaterialResource>{white1x1Material}
+		)
+	);
+
+	modelResources.push_back(
+		CreateModelResource(
+			device,
+			"fence",
+			fenceModelData,
+			std::vector<ModelMaterialResource>{fenceMaterial}
 		)
 	);
 
@@ -2234,6 +2349,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 					ImGui::ColorEdit4("Color", &object.color.x);
 					ImGui::Combo("Lighting Type", &object.lightingType, lightingTypeItems, _countof(lightingTypeItems));
 
+					const char *blendModeItems[] = {"None", "Normal", "Add", "Subtract", "Multiply", "Screen",};
+
+					ImGui::Combo("Blend Mode", &object.blendMode, blendModeItems, _countof(blendModeItems));
+
 					ImGui::DragFloat3("Translate", &object.transform.translate.x, 0.01f);
 					ImGui::DragFloat3("Rotate", &object.transform.rotate.x, 0.01f);
 					ImGui::DragFloat3("Scale", &object.transform.scale.x, 0.01f);
@@ -2398,13 +2517,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			// RootSignatureを設定。PSOに設定しているけど別途設定が必要
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
-			commandList->SetPipelineState(graphicsPipelineState.Get());     // PSOを設定
 
 			// 形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 			for (Object3DInstance &object : objectInstances) {
 				ModelResource &model = modelResources[object.modelIndex];
+
+				assert(0 <= object.blendMode);
+				assert(object.blendMode < BLEND_MODE_COUNT);
+
+				// BlendModeごとにPSOを切り替える
+				commandList->SetPipelineState(graphicsPipelineStates[object.blendMode].Get());
 
 				// モデル用Materialを設定
 				commandList->SetGraphicsRootConstantBufferView(0, object.materialResource->GetGPUVirtualAddress());
@@ -2429,6 +2553,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 					commandList->DrawInstanced(UINT(mesh.vertices.size()), 1, 0, 0);
 				}
 			}
+
+			// Sprite用BlendModeをNormalに戻す
+			commandList->SetPipelineState(graphicsPipelineStates[BLEND_MODE_NORMAL].Get());
 
 			// Sprite用TextureをuvCheckerに戻す
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
