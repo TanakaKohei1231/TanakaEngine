@@ -412,6 +412,9 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(const Microsoft::WRL
 
 	assert(SUCCEEDED(hr));
 
+	// リリースビルドではassertが通らないのでhrの値を使わないため、警告が出ないようにする
+	(void)hr;
+
 	return resource;
 }
 
@@ -433,6 +436,9 @@ MeshResource CreateMeshResource(const Microsoft::WRL::ComPtr<ID3D12Device> &devi
 	VertexData *vertexData = nullptr;
 	HRESULT hr = meshResource.vertexResource->Map(0, nullptr, reinterpret_cast<void **>(&vertexData));
 	assert(SUCCEEDED(hr));
+
+	// リリースビルドではassertが通らないのでhrの値を使わないため、警告が出ないようにする
+	(void)hr;
 
 	std::memcpy(vertexData, meshResource.vertices.data(), sizeof(VertexData) * meshResource.vertices.size());
 
@@ -476,6 +482,9 @@ Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreatDescriptorHeap(
 	
 	// ディスクリプタヒープの生成がうまくいかなかったら起動しない
 	assert(SUCCEEDED(hr));
+
+	// リリースビルドではassertが通らないのでhrの値を使わないため、警告が出ないようにする
+	(void)hr;
 
 	return descriptorHeap;
 }
@@ -536,6 +545,9 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateTextureResource(
 	);
 
 	assert(SUCCEEDED(hr));
+
+	// リリースビルドではassertが通らないのでhrの値を使わないため、警告が出ないようにする
+	(void)hr;
 
 	return resource;
 }
@@ -610,10 +622,12 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateDepthStencilTextureResource(
 
 	// Resourceの生成
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-	HRESULT hr =
-	    device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc,
-	                                    D3D12_RESOURCE_STATE_DEPTH_WRITE, &depthClearValue, IID_PPV_ARGS(resource.GetAddressOf()));
+	HRESULT hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &depthClearValue, IID_PPV_ARGS(resource.GetAddressOf()));
+
 	assert(SUCCEEDED(hr));
+
+	// リリースビルドではassertが通らないのでhrの値を使わないため、警告が出ないようにする
+	(void)hr;
 
 	return resource;
 }
@@ -1278,10 +1292,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// DescriptorSizeを取得しておく
 	const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	const uint32_t descriptorSizeRTV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-	const uint32_t descriptorSizeDSV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-
 	// スワップチェーンからリソースを引っ張ってくる
 	Microsoft::WRL::ComPtr<ID3D12Resource> swapChainResources[2];
 	hr = swapChain->GetBuffer(0, IID_PPV_ARGS(swapChainResources[0].GetAddressOf()));
@@ -1443,6 +1453,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	D3D12_BLEND_DESC blendDesc{};
 	// 全ての色要素を書き込む
 	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -2040,8 +2058,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	DebugCamera debugCamera(key, preKey, &mouseState, &preMouseState ,&gamePadState, &preGamePadState, &isGamePadConnected);
 
+	#ifdef USE_IMGUI
+
 	// ImGuiで選択中のモデル
 	int32_t selectedModelIndex = 0;
+
+	#endif
 
 	// 生成済みオブジェクト一覧
 	std::vector<Object3DInstance> objectInstances;
@@ -2451,7 +2473,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			assert(SUCCEEDED(hr));
 
 			// GPUにコマンドリストの実行を行わせる
-			ID3D12CommandList *commandLists[] = {commandList.Get()};
 			commandQueue->ExecuteCommandLists(1, commandLists);
 
 			// GPUとOSに画面に画面の交換を行うよう通知する
