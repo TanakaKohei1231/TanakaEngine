@@ -69,10 +69,6 @@ class Input {
 	Input() = default;
 	~Input();
 
-
-	// namespace省略
-	//template <class Template> using ComPtr = Microsoft::WRL::ComPtr<Template>
-
 	// キーボードのデバイス
 	Microsoft::WRL::ComPtr<IDirectInputDevice8> keyboard_ = nullptr;
 
