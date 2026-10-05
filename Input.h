@@ -1,8 +1,15 @@
 #pragma once
 #include <Windows.h>
 #include <cstdint>
-#include <dinput.h>
 #include <Xinput.h>
+
+class Input {
+  public:
+	void Initialize(HINSTANCE hInstance, HWND hwnd);
+	void Update();
+
+  private:
+};
 
 // キーを押した状態か
 bool IsPressKey(const BYTE *key, uint8_t keyNumber);

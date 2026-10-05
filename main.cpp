@@ -36,10 +36,8 @@
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "Dbghelp.lib")
-#pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "xaudio2.lib")
-#pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "xinput.lib")
 
 #ifdef USE_IMGUI
@@ -2083,44 +2081,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// DirectInputの初期化
 	// ===========================================================
 
-	// DirectInputの初期化
-	Microsoft::WRL::ComPtr<IDirectInput8> directInput;
-
-	hr = DirectInput8Create(
-		wc.hInstance, DIRECTINPUT_VERSION,
-		IID_IDirectInput8,
-		reinterpret_cast<void **>(directInput.GetAddressOf()),
-		nullptr
-	);
-
-	assert(SUCCEEDED(hr));
-
-	// キーボードデバイスの生成
-	Microsoft::WRL::ComPtr<IDirectInputDevice8> keyboard;
-	hr = directInput->CreateDevice(GUID_SysKeyboard, keyboard.GetAddressOf(), NULL);
-	assert(SUCCEEDED(hr));
-
-	// 入力データ形式のセット
-	hr = keyboard->SetDataFormat(&c_dfDIKeyboard); // 標準形式
-	assert(SUCCEEDED(hr));
-
-	// 排他制御レベルのセット
-	hr = keyboard->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
-	assert(SUCCEEDED(hr));
-
-
-	// マウスデバイスの生成
-	Microsoft::WRL::ComPtr<IDirectInputDevice8> mouse;
-	hr = directInput->CreateDevice(GUID_SysMouse, mouse.GetAddressOf(), NULL);
-	assert(SUCCEEDED(hr));
-
-	// 入力データ形式のセット
-	hr = mouse->SetDataFormat(&c_dfDIMouse2);
-	assert(SUCCEEDED(hr));
-
-	// 排他制御レベルのセット
-	hr = mouse->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
-	assert(SUCCEEDED(hr));
+	std::unique_ptr<Input> input = std::make_unique<Input>();
+	input->Initialize(wc.hInstance, hwnd);
 
 
 	// ===========================================================
