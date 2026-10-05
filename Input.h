@@ -31,15 +31,33 @@ class Input {
 	// ゲームパッドのボタンを離した瞬間か
 	bool IsReleaseTriggerGamePadButton(WORD button) const;
 
-	
+	// マウスのX方向移動量
+	LONG GetMouseMoveX() const;
+
+	// マウスのY方向移動量
+	LONG GetMouseMoveY() const;
+
+	// マウスホイールの移動量
+	LONG GetMouseWheel() const;
+
+	// マウスボタンを押しているか
+	bool IsPressMouseButton(uint8_t buttonNumber) const;
+
+	// 左スティックのX入力
+	float GetLeftStickX() const;
+
+	// 左スティックのY入力
+	float GetLeftStickY() const;
+
+	// Lトリガーの入力
+	float GetLeftTrigger() const;
+
+	// Rトリガーの入力
+	float GetRightTrigger() const;
+
 	// ゲームパッドが接続されているかどうか
 	bool IsGamePadConnected() const { return isGamePadConnected_; }
 
-	// マウスの状態を取得
-	DIMOUSESTATE2 GetMouseState() const { return mouseState_; }
-
-	// ゲームパッドの状態を取得
-	XINPUT_STATE GetGamePadState() const { return gamePadState_; }
 
 
 	// コピーコンストラクタと代入演算子を削除してシングルトンパターンにする

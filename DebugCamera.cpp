@@ -1,31 +1,6 @@
 #include "DebugCamera.h"
 #include "Input.h"
 
-namespace {
-
-float NormalizeStickValue(SHORT value, SHORT deadZone) {
-	if (-deadZone < value && value < deadZone) {
-		return 0.0f;
-	}
-
-	if (value < 0) {
-		return static_cast<float>(value) / 32768.0f;
-	}
-
-	return static_cast<float>(value) / 32767.0f;
-}
-
-float NormalizeTriggerValue(BYTE value) {
-	if (value <= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
-		return 0.0f;
-	}
-
-	return static_cast<float>(value) / 255.0f;
-}
-
-} // namespace
-
-
 
 DebugCamera::DebugCamera(const Vector3 &translation, const Vector3 &rotation) {
 	Initialize(translation,rotation);
@@ -95,11 +70,9 @@ bool DebugCamera::UpdateKeyMouseMove() {
 		move.x += kMoveSpeed;
 	}
 
-	DIMOUSESTATE2 mouseState = input->GetMouseState();
-
 	// マウスホイールでZ軸前後移動
-	if (mouseState.lZ != 0) {
-		move.z += static_cast<float>(mouseState.lZ) * kWheelMoveSpeed;
+	if (input->GetMouseWheel() != 0) {
+		move.z += static_cast<float>(input->GetMouseWheel()) * kWheelMoveSpeed;
 	}
 
 	if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
@@ -108,9 +81,9 @@ bool DebugCamera::UpdateKeyMouseMove() {
 	}
 
 	// 右クリック中にマウス移動で回転
-	if (mouseState.rgbButtons[1] & 0x80) {
-		float rotateX = static_cast<float>(mouseState.lY) * kRotateSpeed;
-		float rotateY = static_cast<float>(mouseState.lX) * kRotateSpeed;
+	if (input->IsPressMouseButton(1)) {
+		float rotateX = static_cast<float>(input->GetMouseMoveY()) * kRotateSpeed;
+		float rotateY = static_cast<float>(input->GetMouseMoveX()) * kRotateSpeed;
 
 		if (rotateX != 0.0f || rotateY != 0.0f) {
 			result = true;
@@ -140,32 +113,28 @@ bool DebugCamera::UpdateGamePadMove () {
 	// 移動量
 	Vector3 move = {0.0f, 0.0f, 0.0f};
 
-	XINPUT_STATE gamePadState = Input::GetInstance()->GetGamePadState();
+	Input *input = Input::GetInstance();
 
 	// 十字キーで上下左右移動
-	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_LEFT)) {
 		move.x -= kGamePadMoveSpeed;
 	}
 
-	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_RIGHT)) {
 		move.x += kGamePadMoveSpeed;
 	}
 
-	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_UP)) {
 		move.y += kGamePadMoveSpeed;
 	}
 
-	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_DOWN)) {
 		move.y -= kGamePadMoveSpeed;
 	}
 
-	// L2 / R2でZ軸前後移動
-	float leftTrigger = NormalizeTriggerValue(gamePadState.Gamepad.bLeftTrigger);
-	float rightTrigger = NormalizeTriggerValue(gamePadState.Gamepad.bRightTrigger);
-
 	// L2 / R2でZ移動
-	move.z += rightTrigger * kGamePadZMoveSpeed;
-	move.z -= leftTrigger * kGamePadZMoveSpeed;
+	move.z += input->GetRightTrigger() * kGamePadZMoveSpeed;
+	move.z -= input->GetLeftTrigger() * kGamePadZMoveSpeed;
 
 	if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
 		translation_ += move;
@@ -173,8 +142,8 @@ bool DebugCamera::UpdateGamePadMove () {
 	}
 
 	// 左スティックでピボット回転
-	float stickX = NormalizeStickValue(gamePadState.Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-	float stickY = NormalizeStickValue(gamePadState.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+	float stickX = input->GetLeftStickX();
+	float stickY = input->GetLeftStickY();
 
 	if (stickX != 0.0f || stickY != 0.0f) {
 		result = true;

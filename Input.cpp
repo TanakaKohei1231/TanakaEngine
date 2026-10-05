@@ -7,6 +7,30 @@
 
 using namespace Microsoft::WRL;
 
+namespace {
+
+float NormalizeStickValue(SHORT value, SHORT deadZone) {
+	if (-deadZone < value && value < deadZone) {
+		return 0.0f;
+	}
+
+	if (value < 0) {
+		return static_cast<float>(value) / 32768.0f;
+	}
+
+	return static_cast<float>(value) / 32767.0f;
+}
+
+float NormalizeTriggerValue(BYTE value) {
+	if (value <= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
+		return 0.0f;
+	}
+
+	return static_cast<float>(value) / 255.0f;
+}
+
+} // namespace
+
 Input *Input::GetInstance() {
 	static Input instance;
 	return &instance;
@@ -121,3 +145,25 @@ bool Input::IsTriggerGamePadButton(WORD button) const {
 bool Input::IsReleaseTriggerGamePadButton(WORD button) const {
 	return (gamePadState_.Gamepad.wButtons & button) == 0 && (preGamePadState_.Gamepad.wButtons & button) != 0;
 }
+
+LONG Input::GetMouseMoveX() const { return mouseState_.lX; }
+
+LONG Input::GetMouseMoveY() const { return mouseState_.lY; }
+
+LONG Input::GetMouseWheel() const { return mouseState_.lZ; }
+
+bool Input::IsPressMouseButton(uint8_t buttonNumber) const {
+	return (mouseState_.rgbButtons[buttonNumber] & 0x80) != 0;
+}
+
+float Input::GetLeftStickX() const {
+	return NormalizeStickValue(gamePadState_.Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+}
+
+float Input::GetLeftStickY() const {
+	return NormalizeStickValue(gamePadState_.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+}
+
+float Input::GetLeftTrigger() const { return NormalizeTriggerValue(gamePadState_.Gamepad.bLeftTrigger); }
+
+float Input::GetRightTrigger() const { return NormalizeTriggerValue(gamePadState_.Gamepad.bRightTrigger); }
