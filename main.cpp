@@ -2081,34 +2081,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// DirectInputの初期化
 	// ===========================================================
 
-	std::unique_ptr<Input> input = std::make_unique<Input>();
-	input->Initialize(wc.hInstance, hwnd);
+	Input::GetInstance()->Initialize(wc.hInstance, hwnd);
 
 
 	// ===========================================================
 	// ゲーム用変数の宣言
 	// ===========================================================
-
-	// 全キーの入力状態
-	BYTE key[256] = {};
-
-	// 前フレームの全キーの入力状態
-	BYTE preKey[256] = {};
-
-	// マウスの入力状態
-	DIMOUSESTATE2 mouseState{};
-
-	// 前フレームのマウス入力状態
-	DIMOUSESTATE2 preMouseState{};
-
-	// ゲームパッドの入力状態
-	XINPUT_STATE gamePadState{};
-
-	// 前フレームのゲームパッド入力状態
-	XINPUT_STATE preGamePadState{};
-
-	// ゲームパッドが接続されているか
-	bool isGamePadConnected = false;
 
 
 	Transform transform = {};
@@ -2133,7 +2111,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		"Half Lambert",
 	};
 
-	DebugCamera debugCamera(key, preKey, &mouseState, &preMouseState ,&gamePadState, &preGamePadState, &isGamePadConnected);
+	DebugCamera debugCamera;
 
 	#ifdef USE_IMGUI
 
@@ -2167,46 +2145,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			DispatchMessage(&msg);
 		} else {
 
-			// 前フレームのキー入力状態を保存する
-			std::memcpy(preKey, key, sizeof(key));
+			// 入力更新
+			Input::GetInstance()->Update();
 
-			// キーボード情報の取得開始
-			keyboard->Acquire();
-
-			// 全キーの入力状態を取得する
-			keyboard->GetDeviceState(sizeof(key), key);
-
-			// 前フレームのマウス入力状態を保存する
-			preMouseState = mouseState;
-
-			// マウス入力状態を初期化する
-			mouseState = {};
-
-			// マウス情報の取得開始
-			mouse->Acquire();
-
-			// 前フレームのゲームパッド入力状態を保存する
-			preGamePadState = gamePadState;
-
-			// ゲームパッド入力状態を初期化する
-			gamePadState = {};
-
-			// ゲームパッドの入力状態を取得する
-			DWORD gamePadResult = XInputGetState(0, &gamePadState);
-			isGamePadConnected = gamePadResult == ERROR_SUCCESS;
-
-			// ゲームパッドが接続されてなければ入力状態を初期化
-			if (!isGamePadConnected) {
-				gamePadState = {};
-				preGamePadState = {};
-			}
-
-			// マウスの入力状態を取得する
-			hr = mouse->GetDeviceState(sizeof(mouseState), &mouseState);
-			if (FAILED(hr)) {
-				mouse->Acquire();
-				hr = mouse->GetDeviceState(sizeof(mouseState), &mouseState);
-			}
 
 			// ===========================================================
 			// ImGuiの準備
@@ -2230,30 +2171,28 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			//
 
 			// 数字の0キーが押されていたら出力ウィンドウに「Press 0」と表示
-			if (IsPressKey(key, DIK_0)) {
+			if (Input::GetInstance()->IsPressKey(DIK_0)) {
 				OutputDebugStringA("Press 0\n");
 			}
 
 			// 数字の0キーを押した瞬間なら出力ウィンドウに「Trigger 0」と表示
-			if (IsTriggerKey(key, preKey, DIK_0)) {
+			if (Input::GetInstance()->IsTriggerKey(DIK_0)) {
 				OutputDebugStringA("Trigger 0\n");
 			}
 
 			// 数字の0キーを離した瞬間なら出力ウィンドウに「Release 0」と表示
-			if (IsReleaseTriggerKey(key, preKey, DIK_0)) {
+			if (Input::GetInstance()->IsReleaseTriggerKey(DIK_0)) {
 				OutputDebugStringA("Release 0\n");
 			}
 
 			// Spaceキーを押した瞬間なら音声を再生
-			if (IsTriggerKey(key, preKey, DIK_SPACE)) {
+			if (Input::GetInstance()->IsTriggerKey(DIK_SPACE)) {
 				SoundPlayWave(xAudio2.Get(), soundData1);
 			}
 
 			// GamePadのAボタンを押した瞬間なら音声を再生
-			if (isGamePadConnected) {
-				if (IsTriggerGamePadButton(&gamePadState, &preGamePadState, XINPUT_GAMEPAD_A)) {
-					SoundPlayWave(xAudio2.Get(), soundData1);
-				}
+			if (Input::GetInstance()->IsTriggerGamePadButton(XINPUT_GAMEPAD_A)) {
+				SoundPlayWave(xAudio2.Get(), soundData1);
 			}
 
 			#ifdef USE_IMGUI
@@ -2265,7 +2204,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			// ゲームパッドのキー説明
 			ImGui::SeparatorText("GamePad");
-			ImGui::Text("GamePad : %s", isGamePadConnected ? "Connected" : "Not Connected");
+			ImGui::Text("GamePad : %s", Input::GetInstance()->IsGamePadConnected() ? "Connected" : "Not Connected");
 			ImGui::Text("Left Stick : Pivot Rotate Camera");
 			ImGui::Text("LT / RT : Move Camera Z");
 			ImGui::Text("D-Pad : Move Camera XY");
@@ -2371,6 +2310,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 			debugCamera.Update();
+
 			for (Object3DInstance &object : objectInstances) {
 				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(object.transform);
 				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera.GetViewProjectionMatrix());
@@ -2391,10 +2331,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// Sprite用のWorldViewProjectionMatrixを作る
 			Matrix4x4 worldMatrixSprite = Matrix4x4::MakeAffineMatrix(transformSprite);
 			Matrix4x4 viewMatrixSprite = Matrix4x4::MakeIdentity4x4();
-			Matrix4x4 projectionMatrixSprite =
-			    Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f);
-			Matrix4x4 worldViewProjectionMatrixSprite =
-			    Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
+			Matrix4x4 projectionMatrixSprite = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f);
+			Matrix4x4 worldViewProjectionMatrixSprite = Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
 
 			transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
 			transformationMatrixDataSprite->World = worldMatrixSprite;
@@ -2594,9 +2532,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ImGui::DestroyContext();
 
 	#endif // USE_IMGUI
-
-	// キーボード入力の取得終了
-	keyboard->Unacquire();
 
 	// XAudio2解放
 	xAudio2.Reset();

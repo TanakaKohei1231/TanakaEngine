@@ -11,12 +11,7 @@
 
 class DebugCamera {
   public:
-	DebugCamera(
-		const BYTE *key,const BYTE *preKey,
-		const DIMOUSESTATE2 *mouseState, const DIMOUSESTATE2 *previousMouseState,
-		const XINPUT_STATE *gamePadState, const XINPUT_STATE *preGamePadState, const bool *isGamePadConnected,
-		const Vector3 &translation = defaultTranslation, const Vector3 &rotation = defaultRotation
-	);
+	DebugCamera(const Vector3 &translation = defaultTranslation, const Vector3 &rotation = defaultRotation);
 
 	void Initialize(const Vector3 &translation = defaultTranslation, const Vector3 &rotation = defaultRotation);
 	void Update();
@@ -39,26 +34,8 @@ class DebugCamera {
 
 	Matrix4x4 viewProjectionMatrix_{};
 
-	// 入力状態へのポインタ
-	const BYTE *key_ = nullptr;
-	const BYTE *preKey_ = nullptr;
-
-	// マウス入力状態へのポインタ
-	const DIMOUSESTATE2 *mouseState_ = nullptr;
-	const DIMOUSESTATE2 *preMouseState_ = nullptr;
-
 	// キーボード・マウスでの操作
 	bool UpdateKeyMouseMove();
-
-	// ゲームパッド入力状態へのポインタ
-	const XINPUT_STATE *gamePadState_ = nullptr;
-	const XINPUT_STATE *preGamePadState_ = nullptr;
-
-	// ゲームパッドが接続されているか
-	const bool *isGamePadConnected_ = nullptr;
-
-	// ゲームパッドが正常に接続されているか
-	bool IsGamePadConnected();
 
 	// ゲームパッドでの操作
 	bool UpdateGamePadMove();

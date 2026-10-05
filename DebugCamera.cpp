@@ -27,20 +27,7 @@ float NormalizeTriggerValue(BYTE value) {
 
 
 
-DebugCamera::DebugCamera(
-	const BYTE *key, const BYTE *preKey,
-	const DIMOUSESTATE2 *mouseState, const DIMOUSESTATE2 *preMouseState,
-	const XINPUT_STATE *gamePadState, const XINPUT_STATE *preGamePadState, const bool *isGamePadConnected,
-	const Vector3 &translation, const Vector3 &rotation
-) {
-	key_ = key;
-	preKey_ = preKey;
-	mouseState_ = mouseState;
-	preMouseState_ = preMouseState;
-	gamePadState_ = gamePadState;
-	preGamePadState_ = preGamePadState;
-	isGamePadConnected_ = isGamePadConnected;
-
+DebugCamera::DebugCamera(const Vector3 &translation, const Vector3 &rotation) {
 	Initialize(translation,rotation);
 }
 
@@ -83,37 +70,36 @@ void DebugCamera::UpdateMatrix() {
 bool DebugCamera::UpdateKeyMouseMove() {
 	bool result = false;
 
-	// キーボードとマウスの情報がなければ終了
-	if (key_ == nullptr || mouseState_ == nullptr) {
-		return false;
-	}
-
 	// 移動量
 	Vector3 move = {0.0f, 0.0f, 0.0f};
 
+	Input *input = Input::GetInstance();
+
 	// Wキーで上移動
-	if (IsPressKey(key_, DIK_W)) {
+	if (input->IsPressKey(DIK_W)) {
 		move.y += kMoveSpeed;
 	}
 
 	// Aキーで左移動
-	if (IsPressKey(key_, DIK_A)) {
+	if (input->IsPressKey(DIK_A)) {
 		move.x -= kMoveSpeed;
 	}
 
 	// Sキーで下移動
-	if (IsPressKey(key_, DIK_S)) {
+	if (input->IsPressKey(DIK_S)) {
 		move.y -= kMoveSpeed;
 	}
 
 	// Dキーで右移動
-	if (IsPressKey(key_, DIK_D)) {
+	if (input->IsPressKey(DIK_D)) {
 		move.x += kMoveSpeed;
 	}
 
+	DIMOUSESTATE2 mouseState = input->GetMouseState();
+
 	// マウスホイールでZ軸前後移動
-	if (mouseState_->lZ != 0) {
-		move.z += static_cast<float>(mouseState_->lZ) * kWheelMoveSpeed;
+	if (mouseState.lZ != 0) {
+		move.z += static_cast<float>(mouseState.lZ) * kWheelMoveSpeed;
 	}
 
 	if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
@@ -122,9 +108,9 @@ bool DebugCamera::UpdateKeyMouseMove() {
 	}
 
 	// 右クリック中にマウス移動で回転
-	if (mouseState_->rgbButtons[1] & 0x80) {
-		float rotateX = static_cast<float>(mouseState_->lY) * kRotateSpeed;
-		float rotateY = static_cast<float>(mouseState_->lX) * kRotateSpeed;
+	if (mouseState.rgbButtons[1] & 0x80) {
+		float rotateX = static_cast<float>(mouseState.lY) * kRotateSpeed;
+		float rotateY = static_cast<float>(mouseState.lX) * kRotateSpeed;
 
 		if (rotateX != 0.0f || rotateY != 0.0f) {
 			result = true;
@@ -147,33 +133,35 @@ bool DebugCamera::UpdateGamePadMove () {
 	bool result = false;
 
 	// ゲームパッドが接続されていなければ終了
-	if (!IsGamePadConnected()) {
+	if (!Input::GetInstance()->IsGamePadConnected()) {
 		return false;
 	}
 
 	// 移動量
 	Vector3 move = {0.0f, 0.0f, 0.0f};
 
+	XINPUT_STATE gamePadState = Input::GetInstance()->GetGamePadState();
+
 	// 十字キーで上下左右移動
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) {
+	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) {
 		move.x -= kGamePadMoveSpeed;
 	}
 
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) {
+	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) {
 		move.x += kGamePadMoveSpeed;
 	}
 
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) {
+	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) {
 		move.y += kGamePadMoveSpeed;
 	}
 
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) {
+	if (gamePadState.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) {
 		move.y -= kGamePadMoveSpeed;
 	}
 
 	// L2 / R2でZ軸前後移動
-	float leftTrigger = NormalizeTriggerValue(gamePadState_->Gamepad.bLeftTrigger);
-	float rightTrigger = NormalizeTriggerValue(gamePadState_->Gamepad.bRightTrigger);
+	float leftTrigger = NormalizeTriggerValue(gamePadState.Gamepad.bLeftTrigger);
+	float rightTrigger = NormalizeTriggerValue(gamePadState.Gamepad.bRightTrigger);
 
 	// L2 / R2でZ移動
 	move.z += rightTrigger * kGamePadZMoveSpeed;
@@ -185,8 +173,8 @@ bool DebugCamera::UpdateGamePadMove () {
 	}
 
 	// 左スティックでピボット回転
-	float stickX = NormalizeStickValue(gamePadState_->Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-	float stickY = NormalizeStickValue(gamePadState_->Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+	float stickX = NormalizeStickValue(gamePadState.Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+	float stickY = NormalizeStickValue(gamePadState.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
 
 	if (stickX != 0.0f || stickY != 0.0f) {
 		result = true;
@@ -204,12 +192,4 @@ bool DebugCamera::UpdateGamePadMove () {
 	}
 
 	return result;
-}
-
-bool DebugCamera::IsGamePadConnected () {
-	if (gamePadState_ == nullptr || isGamePadConnected_ == nullptr || !*isGamePadConnected_) {
-		return false;
-	}
-
-	return true;
 }
