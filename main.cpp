@@ -1918,8 +1918,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	fenceSrvDesc.Texture2D.MipLevels = UINT(fenceMetadata.mipLevels);
 
 	// fence用のSRVを作成するDescriptorHeapの場所を決める
-	D3D12_CPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleCPU =
-	    GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
+	D3D12_CPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
 
@@ -2077,10 +2076,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	SoundPlayWave(xAudio2.Get(), soundData1);
 
 
-	// ===========================================================
-	// DirectInputの初期化
-	// ===========================================================
 
+	// Inputの初期化
 	Input::GetInstance()->Initialize(wc.hInstance, hwnd);
 
 
@@ -2111,7 +2108,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		"Half Lambert",
 	};
 
-	DebugCamera debugCamera;
+	DebugCamera *debugCamera = new DebugCamera;
 
 	#ifdef USE_IMGUI
 
@@ -2309,11 +2306,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			materialData->lightingType = lightingType;
 
 
-			debugCamera.Update();
+			debugCamera->Update();
 
 			for (Object3DInstance &object : objectInstances) {
 				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(object.transform);
-				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera.GetViewProjectionMatrix());
+				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
 
 				object.wvpData->WVP = worldViewProjectionMatrix;
 				object.wvpData->World = worldMatrix;
@@ -2538,6 +2535,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// 音声データ解放
 	SoundUnload(&soundData1);
+
+	// デバッグカメラの開放
+	delete debugCamera;
 
 
 	Log(log, ConvertString(std::format(L"\nlog\n")));
