@@ -205,6 +205,11 @@ struct Object3DInstance {
 	TransformationMatrix *wvpData;
 };
 
+struct Particle {
+	Transform transform;
+	Vector3 velocty;
+};
+
 // ウィンドウプロシージャ
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
@@ -1835,12 +1840,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	}
 
 	// Particle用Transformの作成
-	Transform particleTransforms[kNumInstance];
+	Particle particles[kNumInstance];
 
 	for (uint32_t index = 0; index < kNumInstance; ++index) {
-		particleTransforms[index].scale = {1.0f, 1.0f, 1.0f};
-		particleTransforms[index].rotate = {0.0f, 0.0f, 0.0f};
-		particleTransforms[index].translate = {index * 0.1f, index * 0.1f, index * 0.1f};
+		particles[index].transform.scale = {1.0f, 1.0f, 1.0f};
+		particles[index].transform.rotate = {0.0f, 0.0f, 0.0f};
+		particles[index].transform.translate = {index * 0.1f, index * 0.1f, index * 0.1f};
 	}
 
 	ModelData sphereModelData = CreateSphereModelData(16, 1.0f);
@@ -2410,7 +2415,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	objectInstances.push_back(CreateObject3DInstance(device, 0, initialObjectTransform));
 
+	// パーティクルに初期速度を与える
+	for (uint32_t i = 0; i < kNumInstance; ++i) {
+		particles[i].velocty = {0.0f, 1.0f, 0.0f};
+	}
 
+	const float kDeltaTime = 1.0f / 60.0f;
 
 	// ===========================================================
 	// メインループ
@@ -2649,17 +2659,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			// Particleの更新処理
 			// ===========================================================
 
-			// 各インスタンスのTransformを行列に変換する
-			for (uint32_t index = 0; index < kNumInstance; ++index) {
+			
+			for (uint32_t i = 0; i < kNumInstance; ++i) {
+				// 速度の反映
+				particles[i].transform.translate += particles[i].velocty * kDeltaTime;
+
+				// 各インスタンスのTransformを行列に変換する
 				// World行列
-				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(particleTransforms[index]);
+				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(particles[i].transform);
 
 				// WorldViewProjection行列
 				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera.GetViewProjectionMatrix());
 
 				// Instancing用Resourceに書き込む
-				instancingData[index].WVP = worldViewProjectionMatrix;
-				instancingData[index].World = worldMatrix;
+				instancingData[i].WVP = worldViewProjectionMatrix;
+				instancingData[i].World = worldMatrix;
 			}
 
 			// Sprite用のWorldViewProjectionMatrixを作る
