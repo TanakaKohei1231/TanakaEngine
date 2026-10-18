@@ -1,46 +1,8 @@
 #include "DebugCamera.h"
 #include "Input.h"
 
-namespace {
 
-float NormalizeStickValue(SHORT value, SHORT deadZone) {
-	if (-deadZone < value && value < deadZone) {
-		return 0.0f;
-	}
-
-	if (value < 0) {
-		return static_cast<float>(value) / 32768.0f;
-	}
-
-	return static_cast<float>(value) / 32767.0f;
-}
-
-float NormalizeTriggerValue(BYTE value) {
-	if (value <= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
-		return 0.0f;
-	}
-
-	return static_cast<float>(value) / 255.0f;
-}
-
-} // namespace
-
-
-
-DebugCamera::DebugCamera(
-	const BYTE *key, const BYTE *preKey,
-	const DIMOUSESTATE2 *mouseState, const DIMOUSESTATE2 *preMouseState,
-	const XINPUT_STATE *gamePadState, const XINPUT_STATE *preGamePadState, const bool *isGamePadConnected,
-	const Vector3 &translation, const Vector3 &rotation
-) {
-	key_ = key;
-	preKey_ = preKey;
-	mouseState_ = mouseState;
-	preMouseState_ = preMouseState;
-	gamePadState_ = gamePadState;
-	preGamePadState_ = preGamePadState;
-	isGamePadConnected_ = isGamePadConnected;
-
+DebugCamera::DebugCamera(const Vector3 &translation, const Vector3 &rotation) {
 	Initialize(translation,rotation);
 }
 
@@ -83,37 +45,34 @@ void DebugCamera::UpdateMatrix() {
 bool DebugCamera::UpdateKeyMouseMove() {
 	bool result = false;
 
-	// キーボードとマウスの情報がなければ終了
-	if (key_ == nullptr || mouseState_ == nullptr) {
-		return false;
-	}
-
 	// 移動量
 	Vector3 move = {0.0f, 0.0f, 0.0f};
 
+	Input *input = Input::GetInstance();
+
 	// Wキーで上移動
-	if (IsPressKey(key_, DIK_W)) {
+	if (input->IsPressKey(DIK_W)) {
 		move.y += kMoveSpeed;
 	}
 
 	// Aキーで左移動
-	if (IsPressKey(key_, DIK_A)) {
+	if (input->IsPressKey(DIK_A)) {
 		move.x -= kMoveSpeed;
 	}
 
 	// Sキーで下移動
-	if (IsPressKey(key_, DIK_S)) {
+	if (input->IsPressKey(DIK_S)) {
 		move.y -= kMoveSpeed;
 	}
 
 	// Dキーで右移動
-	if (IsPressKey(key_, DIK_D)) {
+	if (input->IsPressKey(DIK_D)) {
 		move.x += kMoveSpeed;
 	}
 
 	// マウスホイールでZ軸前後移動
-	if (mouseState_->lZ != 0) {
-		move.z += static_cast<float>(mouseState_->lZ) * kWheelMoveSpeed;
+	if (input->GetMouseWheel() != 0) {
+		move.z += static_cast<float>(input->GetMouseWheel()) * kWheelMoveSpeed;
 	}
 
 	if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
@@ -122,9 +81,9 @@ bool DebugCamera::UpdateKeyMouseMove() {
 	}
 
 	// 右クリック中にマウス移動で回転
-	if (mouseState_->rgbButtons[1] & 0x80) {
-		float rotateX = static_cast<float>(mouseState_->lY) * kRotateSpeed;
-		float rotateY = static_cast<float>(mouseState_->lX) * kRotateSpeed;
+	if (input->IsPressMouseButton(1)) {
+		float rotateX = static_cast<float>(input->GetMouseMoveY()) * kRotateSpeed;
+		float rotateY = static_cast<float>(input->GetMouseMoveX()) * kRotateSpeed;
 
 		if (rotateX != 0.0f || rotateY != 0.0f) {
 			result = true;
@@ -147,37 +106,35 @@ bool DebugCamera::UpdateGamePadMove () {
 	bool result = false;
 
 	// ゲームパッドが接続されていなければ終了
-	if (!IsGamePadConnected()) {
+	if (!Input::GetInstance()->IsGamePadConnected()) {
 		return false;
 	}
 
 	// 移動量
 	Vector3 move = {0.0f, 0.0f, 0.0f};
 
+	Input *input = Input::GetInstance();
+
 	// 十字キーで上下左右移動
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_LEFT)) {
 		move.x -= kGamePadMoveSpeed;
 	}
 
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_RIGHT)) {
 		move.x += kGamePadMoveSpeed;
 	}
 
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_UP)) {
 		move.y += kGamePadMoveSpeed;
 	}
 
-	if (gamePadState_->Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) {
+	if (input->IsPressGamePadButton(XINPUT_GAMEPAD_DPAD_DOWN)) {
 		move.y -= kGamePadMoveSpeed;
 	}
 
-	// L2 / R2でZ軸前後移動
-	float leftTrigger = NormalizeTriggerValue(gamePadState_->Gamepad.bLeftTrigger);
-	float rightTrigger = NormalizeTriggerValue(gamePadState_->Gamepad.bRightTrigger);
-
 	// L2 / R2でZ移動
-	move.z += rightTrigger * kGamePadZMoveSpeed;
-	move.z -= leftTrigger * kGamePadZMoveSpeed;
+	move.z += input->GetRightTrigger() * kGamePadZMoveSpeed;
+	move.z -= input->GetLeftTrigger() * kGamePadZMoveSpeed;
 
 	if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
 		translation_ += move;
@@ -185,8 +142,8 @@ bool DebugCamera::UpdateGamePadMove () {
 	}
 
 	// 左スティックでピボット回転
-	float stickX = NormalizeStickValue(gamePadState_->Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-	float stickY = NormalizeStickValue(gamePadState_->Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+	float stickX = input->GetLeftStickX();
+	float stickY = input->GetLeftStickY();
 
 	if (stickX != 0.0f || stickY != 0.0f) {
 		result = true;
@@ -204,12 +161,4 @@ bool DebugCamera::UpdateGamePadMove () {
 	}
 
 	return result;
-}
-
-bool DebugCamera::IsGamePadConnected () {
-	if (gamePadState_ == nullptr || isGamePadConnected_ == nullptr || !*isGamePadConnected_) {
-		return false;
-	}
-
-	return true;
 }
