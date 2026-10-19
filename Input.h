@@ -6,11 +6,14 @@
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
 
+// 前方宣言
+class Window;
+
 class Input {
   public:
 	static Input *GetInstance();
 
-	void Initialize(HINSTANCE hInstance, HWND hwnd);
+	void Initialize(Window *window);
 	void Update();
 
 	// キーを押した状態か

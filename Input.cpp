@@ -1,6 +1,7 @@
 #include "Input.h"
 #include <cassert>
 #include <string>
+#include "Window.h"
 
 #pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "dxguid.lib")
@@ -36,13 +37,13 @@ Input *Input::GetInstance() {
 	return &instance;
 }
 
-void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
+void Input::Initialize(Window *window) {
 
 	// DirectInputの初期化
 	ComPtr<IDirectInput8> directInput = nullptr;
 
 	HRESULT hr = DirectInput8Create(
-		hInstance, DIRECTINPUT_VERSION,
+		window->GetHInstance(), DIRECTINPUT_VERSION,
 		IID_IDirectInput8,
 		reinterpret_cast<void **>(directInput.GetAddressOf()),
 		nullptr
@@ -59,7 +60,7 @@ void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
 	assert(SUCCEEDED(hr));
 
 	// 排他制御レベルのセット
-	hr = keyboard_->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
+	hr = keyboard_->SetCooperativeLevel(window->GetHwnd(), DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
 	assert(SUCCEEDED(hr));
 
 	// マウスデバイスの生成
@@ -71,7 +72,7 @@ void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
 	assert(SUCCEEDED(hr));
 
 	// 排他制御レベルのセット
-	hr = mouse_->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+	hr = mouse_->SetCooperativeLevel(window->GetHwnd(), DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
 	assert(SUCCEEDED(hr));
 }
 
