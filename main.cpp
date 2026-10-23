@@ -2568,7 +2568,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(particles[i].transform);
 
 				// WorldViewProjection行列
-				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera.GetViewProjectionMatrix());
+				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
 
 				// Instancing用Resourceに書き込む
 				instancingData[i].WVP = worldViewProjectionMatrix;
