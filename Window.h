@@ -26,4 +26,7 @@ class Window {
 
 	// ウィンドウサイズを表す構造体
 	WNDCLASS wc_{};
+
+	// タイマー分解能の変更状態
+	bool timerResolutionRequested_ = false;
 };

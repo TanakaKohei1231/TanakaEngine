@@ -1,5 +1,8 @@
 #include "Window.h"
+
 #include <cassert>
+#include <timeapi.h>
+
 
 #ifdef USE_IMGUI
 
@@ -11,7 +14,12 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 #endif // USE_IMGUI
 
+#pragma comment(lib, "winmm.lib")
+
 void Window::Initialize() {
+	// タイマー分解能を1msに設定
+	timerResolutionRequested_ = (timeBeginPeriod(1) == TIMERR_NOERROR);
+
 	// ウィンドウサイズを表す構造体にクライアント領域を入れる
 	// ウィンドウプロシージャ
 	wc_.lpfnWndProc = WindowProc;
@@ -79,6 +87,12 @@ void Window::Finalize() {
 	}
 
 	UnregisterClass(wc_.lpszClassName, wc_.hInstance);
+
+	// タイマー分解能の要求を解除
+	if (timerResolutionRequested_) {
+		timeEndPeriod(1);
+		timerResolutionRequested_ = false;
+	}
 }
 
 LRESULT Window::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {

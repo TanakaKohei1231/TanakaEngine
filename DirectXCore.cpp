@@ -5,6 +5,7 @@
 #include <cassert>
 #include <format>
 #include <stdexcept>
+#include <thread>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -24,6 +25,9 @@ using namespace Logger;
 using namespace StringUtility;
 
 void DirectXCore::Initialize(std::ostream &log, Window *window) {
+	// FPS固定処理の初期化
+	InitializeFixFPS();
+
 	// 引数をメンバ変数にコピー
 	log_ = &log;
 	window_ = window;
@@ -121,6 +125,9 @@ void DirectXCore::PostDraw() {
 
 	// GPUの処理完了を待機
 	WaitForGPU();
+
+	// FPS固定処理
+	UpdateFixFPS();
 
 	// 次フレームに向けてコマンドアロケータをリセット
 	hr = commandAllocator_->Reset();
@@ -422,6 +429,42 @@ void DirectXCore::InitializeImGui() {
 
 	#endif // USE_IMGUI
 }
+
+void DirectXCore::InitializeFixFPS() {
+
+	// 現在時刻を基準時刻として記録
+	reference_ = std::chrono::steady_clock::now();
+}
+
+void DirectXCore::UpdateFixFPS() {
+
+	// 1/60秒分の時間
+	const std::chrono::microseconds kMinTime(1000000 / 60);
+
+	// 1/60秒より少し短い時間
+	const std::chrono::microseconds kMinCheckTime(1000000 / 65);
+
+	// 現在時刻を取得
+	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+	// 前回記録からの経過時間を取得
+	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - reference_);
+
+	// 1/60秒より少し短い時間しか経過していない場合
+	if (elapsed < kMinCheckTime) {
+
+		// 1/60秒経過するまで待機
+		while (std::chrono::steady_clock::now() - reference_ < kMinTime) {
+
+			// 1マイクロ秒のスリープを要求
+			std::this_thread::sleep_for(std::chrono::microseconds(1));
+		}
+	}
+
+	// 次フレームの計測用に現在時刻を保存
+	reference_ = std::chrono::steady_clock::now();
+}
+
 
 void DirectXCore::WaitForGPU() {
 

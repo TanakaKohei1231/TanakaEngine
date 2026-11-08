@@ -10,7 +10,6 @@
 #include <cassert>
 #include <dbghelp.h>
 #include <strsafe.h>
-#include <dxgidebug.h>
 #include <dxcapi.h>
 #include"Matrix4x4.h"
 #include"externals/DirectXTex/DirectXTex.h"
@@ -34,6 +33,7 @@
 #include "Logger.h"
 #include "StringUtility.h"
 #include "DirectXCore.h"
+#include "DirectXResourceLeakChecker.h"
 
 
 
@@ -126,18 +126,6 @@ struct MeshData {
 struct ModelData {
 	std::vector<MeshData> meshes;
 	std::vector<MaterialData> materials;
-};
-
-struct D3DResourceLeakChecker {
-	~D3DResourceLeakChecker() {
-		// リソースリークチェック
-		Microsoft::WRL::ComPtr<IDXGIDebug1> debug;
-		if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(debug.GetAddressOf())))) {
-			debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_APP, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
-		}
-	}
 };
 
 // チャンクヘッダ
@@ -1022,7 +1010,7 @@ Object3DInstance CreateObject3DInstance(
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	CoInitializeEx(0, COINIT_MULTITHREADED);
 
-	D3DResourceLeakChecker leakCheck;
+	DirectXResourceLeakChecker leakCheck;
 
 	// ログファイルの作成
 	std::ofstream log = CreateLogFile();

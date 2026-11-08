@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <Windows.h>
 #include <dxcapi.h>
+#include <chrono>
 
 // 前方宣言
 class Window;
@@ -131,6 +132,9 @@ class DirectXCore {
 	// シザリング矩形
 	D3D12_RECT scissorRect_{};
 
+	// FPS固定用の基準時刻
+	std::chrono::steady_clock::time_point reference_{};
+
 	// ログ出力先
 	std::ostream *log_ = nullptr;
 
@@ -169,6 +173,12 @@ class DirectXCore {
 
 	// ImGuiの初期化
 	void InitializeImGui();
+
+	// FPS固定処理の初期化
+	void InitializeFixFPS();
+
+	// FPS固定処理の更新
+	void UpdateFixFPS();
 
 	// ディスクリプタヒープの生成
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreatDescriptorHeap(const Microsoft::WRL::ComPtr<ID3D12Device> &device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible);
