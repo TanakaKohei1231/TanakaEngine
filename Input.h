@@ -61,17 +61,7 @@ class Input {
 	// ゲームパッドが接続されているかどうか
 	bool IsGamePadConnected() const { return isGamePadConnected_; }
 
-
-
-	// コピーコンストラクタと代入演算子を削除してシングルトンパターンにする
-	Input(const Input &) = delete;
-	Input &operator=(const Input &) = delete;
-
   private:
-	// シングルトンパターンにするためのコンストラクタとデストラクタをprivateにする
-	Input() = default;
-	~Input();
-
 	// キーボードのデバイス
 	Microsoft::WRL::ComPtr<IDirectInputDevice8> keyboard_ = nullptr;
 
@@ -98,4 +88,12 @@ class Input {
 
 	// ゲームパッドが接続されているか
 	bool isGamePadConnected_ = false;
+
+
+	// シングルトンパターンにする
+	Input(const Input &) = delete;
+	Input &operator=(const Input &) = delete;
+	Input() = default;
+	~Input();
+
 };
