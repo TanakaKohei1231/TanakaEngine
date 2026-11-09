@@ -119,15 +119,20 @@ void DirectXCore::PostDraw() {
 	ID3D12CommandList *commandLists[] = {commandList_.Get()};
 	commandQueue_->ExecuteCommandLists(1, commandLists);
 
+	// VSyncの設定（0: 無効、1: 有効）
+	constexpr UINT kSyncInterval = 0;
+
 	// 画面を表示する
-	hr = swapChain_->Present(1, 0);
+	hr = swapChain_->Present(kSyncInterval, 0);
 	assert(SUCCEEDED(hr));
 
 	// GPUの処理完了を待機
 	WaitForGPU();
 
-	// FPS固定処理
-	UpdateFixFPS();
+	// VSync無効時のみ自前でFPSを制御
+	if (kSyncInterval == 0) {
+		UpdateFixFPS();
+	}
 
 	// 次フレームに向けてコマンドアロケータをリセット
 	hr = commandAllocator_->Reset();
@@ -311,13 +316,13 @@ void DirectXCore::InitializeSwapChain() {
 void DirectXCore::InitializeDescriptorHeaps() {
 	// ディスクリプタヒープの生成
 	// RTV用のヒープでディスクリプタの数は2。SRVはshader内で触るものではないので、shaderVisibleはfalse
-	rtvDescriptorHeap_ = CreatDescriptorHeap(device_, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);
+	rtvDescriptorHeap_ = CreateDescriptorHeap(device_, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);
 
 	// SRV用のヒープでディスクリプタの数は128。SRVはshader内で触るものなので、shaderVisibleはtrue
-	srvDescriptorHeap_ = CreatDescriptorHeap(device_, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
+	srvDescriptorHeap_ = CreateDescriptorHeap(device_, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
 	// DSV用のヒープでディスクリプタの数は1。DSVはShader内で触るものではないので、shaderVisibleはfalse
-	dsvDescriptorHeap_ = CreatDescriptorHeap(device_, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
+	dsvDescriptorHeap_ = CreateDescriptorHeap(device_, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
 
 	// DescriptorSizeを取得
 	descriptorSizeSRV_ = device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -432,37 +437,42 @@ void DirectXCore::InitializeImGui() {
 
 void DirectXCore::InitializeFixFPS() {
 
-	// 現在時刻を基準時刻として記録
-	reference_ = std::chrono::steady_clock::now();
+	// 1フレームの目標時間
+	constexpr auto kFrameInterval = std::chrono::nanoseconds(1000000000 / 60);
+
+	// 次フレームの目標時刻を設定
+	nextFrameTime_ = std::chrono::steady_clock::now() + kFrameInterval;
 }
 
 void DirectXCore::UpdateFixFPS() {
 
-	// 1/60秒分の時間
-	const std::chrono::microseconds kMinTime(1000000 / 60);
-
-	// 1/60秒より少し短い時間
-	const std::chrono::microseconds kMinCheckTime(1000000 / 65);
+	// 1フレームの目標時間
+	constexpr auto kFrameInterval = std::chrono::nanoseconds(1000000000 / 60);
 
 	// 現在時刻を取得
-	std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	auto now = std::chrono::steady_clock::now();
 
-	// 前回記録からの経過時間を取得
-	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - reference_);
-
-	// 1/60秒より少し短い時間しか経過していない場合
-	if (elapsed < kMinCheckTime) {
-
-		// 1/60秒経過するまで待機
-		while (std::chrono::steady_clock::now() - reference_ < kMinTime) {
-
-			// 1マイクロ秒のスリープを要求
-			std::this_thread::sleep_for(std::chrono::microseconds(1));
-		}
+	// 目標時刻に到達していなければ待機
+	if (now < nextFrameTime_) {
+		std::this_thread::sleep_until(nextFrameTime_);
 	}
 
-	// 次フレームの計測用に現在時刻を保存
-	reference_ = std::chrono::steady_clock::now();
+	// 待機後の現在時刻を取得
+	now = std::chrono::steady_clock::now();
+
+	// 次フレームの目標時刻を更新
+	if (now < nextFrameTime_) {
+
+		nextFrameTime_ += kFrameInterval;
+
+	} else {
+
+		// 目標時刻から何フレーム分経過したか
+		auto elapsedFrames = (now - nextFrameTime_) / kFrameInterval;
+
+		// 遅れた分を飛ばして次の目標時刻へ進める
+		nextFrameTime_ += kFrameInterval * (elapsedFrames + 1);
+	}
 }
 
 
@@ -484,7 +494,7 @@ void DirectXCore::WaitForGPU() {
 	}
 }
 
-ComPtr<ID3D12DescriptorHeap> DirectXCore::CreatDescriptorHeap(const ComPtr<ID3D12Device> &device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
+ComPtr<ID3D12DescriptorHeap> DirectXCore::CreateDescriptorHeap(const ComPtr<ID3D12Device> &device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
 
 	ComPtr<ID3D12DescriptorHeap> descriptorHeap;
 	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};

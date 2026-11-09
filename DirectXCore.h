@@ -132,8 +132,8 @@ class DirectXCore {
 	// シザリング矩形
 	D3D12_RECT scissorRect_{};
 
-	// FPS固定用の基準時刻
-	std::chrono::steady_clock::time_point reference_{};
+	// 次フレームの目標時刻
+	std::chrono::steady_clock::time_point nextFrameTime_{};
 
 	// ログ出力先
 	std::ostream *log_ = nullptr;
@@ -181,7 +181,7 @@ class DirectXCore {
 	void UpdateFixFPS();
 
 	// ディスクリプタヒープの生成
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreatDescriptorHeap(const Microsoft::WRL::ComPtr<ID3D12Device> &device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible);
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(const Microsoft::WRL::ComPtr<ID3D12Device> &device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible);
 
 	// 深度ステンシル用テクスチャリソースの生成
 	Microsoft::WRL::ComPtr<ID3D12Resource> CreateDepthStencilTextureResource(const Microsoft::WRL::ComPtr<ID3D12Device> &device, int32_t width, int32_t height);
