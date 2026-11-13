@@ -1870,7 +1870,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	transform.scale = {1.0f, 1.0f, 1.0f};
 
 	Transform transformSprite = {};
-	transformSprite.scale = {1.0f, 1.0f, 1.0f};
+	transformSprite.scale = {0.0f, 0.0f, 0.0f};
 	transformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	transformSprite.translate = {0.0f, 0.0f, 0.0f};
 
@@ -1904,15 +1904,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 生成済みオブジェクト一覧
 	std::vector<Object3DInstance> objectInstances;
 
-	// 初期配置のオブジェクト
-	Transform initialObjectTransform{};
-	initialObjectTransform.scale = {1.0f, 1.0f, 1.0f};
-	initialObjectTransform.rotate = {0.0f, 0.0f, 0.0f};
-	initialObjectTransform.translate = {0.0f, 0.0f, 0.0f};
-
-	objectInstances.push_back(CreateObject3DInstance(device, 0, initialObjectTransform));
-
-	const float kDeltaTime = 1.0f / 60.0f;
+	float deltaTime = 1.0f / 60.0f;
 
 	// ===========================================================
 	// メインループ
@@ -1992,11 +1984,25 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::Text("D-Pad : Move Camera XY");
 
 
+		// パーティクル周りの設定
 		ImGui::SeparatorText("Particle");
 
+		// 初期化
 		if (ImGui::Button("ParticleInitialize")) {
 			particleSystem.Initialize();
 		}
+
+		// 一時停止
+		if (ImGui::Button("ParticlePause")) {
+			if (deltaTime == 0.0f) {
+				deltaTime = 1.0f / 60.0f;
+			} else {
+				deltaTime = 0.0f;
+			}
+		}
+
+		// パーティクルの実行速度
+		ImGui::DragFloat("Particle Execution speed", &deltaTime, 0.001f, 0.0f, 1.0f / 60.0f);
 
 		ImGui::SeparatorText("Model Create");
 
@@ -2119,7 +2125,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 		// パーティクルの更新
-		particleSystem.Update(kDeltaTime, debugCamera->GetViewProjectionMatrix(), instancingData);
+		particleSystem.Update(deltaTime, debugCamera->GetViewProjectionMatrix(), instancingData);
 
 
 		// Sprite用のWorldViewProjectionMatrixを作る
