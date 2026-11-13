@@ -1908,6 +1908,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ParticleSystem particleSystem{};
 	particleSystem.Initialize();
 
+	// ビルボードの有効化
+	bool useBillboard = true;
+
 	// ライティング方式
 	int lightingType = LIGHTING_HALF_LAMBERT;
 
@@ -2029,6 +2032,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// パーティクルの実行速度
 		ImGui::DragFloat("Particle Execution speed", &deltaTime, 0.001f, 0.0f, 1.0f / 60.0f);
 
+		// ビルボードの有効化
+		ImGui::Checkbox("Use Billboard", &useBillboard);
+		particleSystem.SetBillboardEnabled(useBillboard);
+
+
+
 		ImGui::SeparatorText("Model Create");
 
 		std::vector<const char *> modelNames;
@@ -2148,9 +2157,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			object.materialData->uvTransform = objectUvTransformMatrix;
 		}
 
+		// カメラの回転行列を取得
+		const Matrix4x4 &cameraMatrix = debugCamera->GetCameraRotationMatrix();
 
 		// パーティクルの更新
-		particleSystem.Update(deltaTime, debugCamera->GetViewProjectionMatrix(), instancingData);
+		particleSystem.Update(deltaTime, debugCamera->GetViewProjectionMatrix(), cameraMatrix, instancingData);
 
 
 		// Sprite用のWorldViewProjectionMatrixを作る

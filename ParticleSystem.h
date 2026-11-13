@@ -55,9 +55,15 @@ class ParticleSystem {
   public:
 	void Initialize();
 
-	void Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, ParticleForGPU *instancingData);
+	void Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, const Matrix4x4& cameraMatrix, ParticleForGPU *instancingData);
 
-	void Draw(const ParticleDrawContext &context);
+	void Draw(const ParticleDrawContext &context) const;
+
+
+	// Billboardの有効・無効
+	void SetBillboardEnabled(bool enabled) { useBillboard_ = enabled; }
+
+	bool IsBillboardEnabled() const { return useBillboard_; }
 
 	// インスタンス数
 	static inline const uint32_t kNumMaxInstance = 10;
@@ -71,4 +77,7 @@ class ParticleSystem {
 	Particle MakeNewParticle(const ParticleSpawnSettings &settings);
 
 	std::mt19937 randomEngine_{std::random_device{}()};
+
+	// Billboardを使用するか
+	bool useBillboard_ = true;
 };

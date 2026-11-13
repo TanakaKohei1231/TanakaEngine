@@ -1,6 +1,7 @@
 #include "ParticleSystem.h"
 #include "Ease.h"
 #include <cassert>
+#include <numbers>
 
 void ParticleSystem::Initialize() {
 	ParticleSpawnSettings settings{};
@@ -12,8 +13,24 @@ void ParticleSystem::Initialize() {
 	numAliveParticles_ = 0;
 }
 
-void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, ParticleForGPU *instancingData) {
+void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, const Matrix4x4& cameraMatrix, ParticleForGPU *instancingData) {
 	assert(instancingData != nullptr);
+
+	// Billboard用の回転行列
+	Matrix4x4 billboardMatrix = Matrix4x4::MakeIdentity4x4();
+
+	if (useBillboard_) {
+		// 板ポリの正面を合わせる
+		Matrix4x4 backToFrontMatrix = Matrix4x4::MakeRotateYMatrix(std::numbers::pi_v<float>);
+
+		// カメラの回転を適用
+		billboardMatrix = Matrix4x4::Multiply(backToFrontMatrix, cameraMatrix);
+
+		// 平行移動を取り除く
+		billboardMatrix.m_[3][0] = 0.0f;
+		billboardMatrix.m_[3][1] = 0.0f;
+		billboardMatrix.m_[3][2] = 0.0f;
+	}
 
 	numAliveParticles_ = 0;
 
@@ -31,7 +48,24 @@ void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatr
 
 		// 各インスタンスのTransformを行列に変換する
 		// World行列
-		Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(particles_[i].transform);
+		Matrix4x4 worldMatrix{};
+
+		if (useBillboard_) {
+			// Scale行列
+			Matrix4x4 scaleMatrix = Matrix4x4::MakeScaleMatrix(particles_[i].transform.scale);
+
+			// Z回転行列
+			Matrix4x4 rotateZMatrix = Matrix4x4::MakeRotateZMatrix(particles_[i].transform.rotate.z);
+
+			// Translate行列
+			Matrix4x4 translateMatrix = Matrix4x4::MakeTranslateMatrix(particles_[i].transform.translate);
+
+			worldMatrix = Matrix4x4::Multiply(Matrix4x4::Multiply(Matrix4x4::Multiply(scaleMatrix, rotateZMatrix), billboardMatrix), translateMatrix);
+
+		} else {
+			// 従来のWorld行列
+			worldMatrix = Matrix4x4::MakeAffineMatrix(particles_[i].transform);
+		}
 
 		// WorldViewProjection行列
 		Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, viewProjectionMatrix);
@@ -53,7 +87,7 @@ void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatr
 }
 
 
-void ParticleSystem::Draw(const ParticleDrawContext &context) {
+void ParticleSystem::Draw(const ParticleDrawContext &context) const {
 	ID3D12GraphicsCommandList *commandList = context.commandList;
 
 	assert(commandList != nullptr);
