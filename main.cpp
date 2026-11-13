@@ -187,6 +187,15 @@ struct Object3DInstance {
 	TransformationMatrix *wvpData;
 };
 
+struct EmitterInstance {
+	// Emitter本体
+	ParticleEmitter emitter;
+
+	// ワイヤーフレーム用WVP
+	Microsoft::WRL::ComPtr<ID3D12Resource> wvpResource;
+	TransformationMatrix *wvpData = nullptr;
+};
+
 // ログファイル作成関数
 std::ofstream CreateLogFile() {
 	// ログのディレクトリを用意
@@ -785,6 +794,39 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 	return modelData;
 }
 
+
+MeshData CreateWireBoxMeshData() {
+	MeshData mesh{};
+	mesh.name = "EmitterWireBox";
+
+	// ローカル座標で±1の立方体
+	const Vector3 corners[8] = {{-1.0f, -1.0f, -1.0f}, {1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {-1.0f, 1.0f, -1.0f},
+
+	                            {-1.0f, -1.0f, 1.0f},  {1.0f, -1.0f, 1.0f},  {1.0f, 1.0f, 1.0f},  {-1.0f, 1.0f, 1.0f}};
+
+	// 12本の辺
+	const uint32_t edges[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
+	                               {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+
+	// 2頂点で1本の線を作る
+	for (uint32_t i = 0; i < 12; ++i) {
+		for (uint32_t j = 0; j < 2; ++j) {
+			const Vector3 &position = corners[edges[i][j]];
+
+			VertexData vertex{};
+			vertex.position = {position.x, position.y, position.z, 1.0f};
+
+			vertex.texcoord = {0.0f, 0.0f};
+			vertex.normal = {0.0f, 0.0f, 1.0f};
+
+			mesh.vertices.push_back(vertex);
+		}
+	}
+
+	return mesh;
+}
+
+
 D3D12_BLEND_DESC CreateBlendDesc(BlendMode blendMode) {
 	D3D12_BLEND_DESC blendDesc{};
 
@@ -995,6 +1037,31 @@ Object3DInstance CreateObject3DInstance(
 }
 
 
+EmitterInstance CreateEmitterInstance(const Microsoft::WRL::ComPtr<ID3D12Device> &device, const Vector3 &position) {
+	EmitterInstance instance{};
+
+	// Emitterの初期化
+	instance.emitter.Initialize(position, 3, 0.5f);
+
+	// ワイヤーフレーム用WVPリソース
+	instance.wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
+
+	// WVPリソースをMap
+	HRESULT hr = instance.wvpResource->Map(0, nullptr, reinterpret_cast<void **>(&instance.wvpData));
+
+	assert(SUCCEEDED(hr));
+	(void)hr;
+
+	// 初期値
+	instance.wvpData->WVP = Matrix4x4::MakeIdentity4x4();
+
+	instance.wvpData->world = Matrix4x4::MakeIdentity4x4();
+
+	return instance;
+}
+
+
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -1181,6 +1248,51 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(graphicsPipelineStates[blendMode].GetAddressOf()));
 		assert(SUCCEEDED(hr));
 	}
+
+
+	// ===========================================================
+	// Emitter範囲表示用のLine PSO
+	// ===========================================================
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC emitterLinePipelineDesc{};
+
+	emitterLinePipelineDesc.pRootSignature = rootSignature.Get();
+	emitterLinePipelineDesc.InputLayout = inputLayoutDesc;
+
+	emitterLinePipelineDesc.VS = {vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize()};
+	emitterLinePipelineDesc.PS = {pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize()};
+
+	// ブレンドなし
+	emitterLinePipelineDesc.BlendState = CreateBlendDesc(BLEND_MODE_NONE);
+
+	// 通常のRasterizer設定を利用
+	emitterLinePipelineDesc.RasterizerState = rasterizerDesc;
+
+	// DepthTestは維持し、Depthには書き込まない
+	D3D12_DEPTH_STENCIL_DESC emitterLineDepthDesc = depthStencilDesc;
+	emitterLineDepthDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+
+	emitterLinePipelineDesc.DepthStencilState = emitterLineDepthDesc;
+
+	// 今回はLINEトポロジーを使用
+	emitterLinePipelineDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
+
+	emitterLinePipelineDesc.NumRenderTargets = 1;
+	emitterLinePipelineDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+
+	emitterLinePipelineDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	emitterLinePipelineDesc.SampleDesc.Count = 1;
+	emitterLinePipelineDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+
+	// PSO生成
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> emitterLinePipelineState;
+
+	hr = device->CreateGraphicsPipelineState(&emitterLinePipelineDesc, IID_PPV_ARGS(emitterLinePipelineState.GetAddressOf()));
+
+	assert(SUCCEEDED(hr));
+	(void)hr;
+
 
 	// ===========================================================
 	// Particle用RootSignatureの作成
@@ -1405,6 +1517,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// Particle用VertexBufferの作成
 	MeshResource particleMeshResource = CreateMeshResource(device, particleMeshData);
+
+	// Emitter範囲表示用のメッシュ
+	MeshData emitterWireMeshData = CreateWireBoxMeshData();
+
+	MeshResource emitterWireMeshResource = CreateMeshResource(device, emitterWireMeshData);
 
 	// ===========================================================
 	// Instancing用Resourceの作成
@@ -1909,15 +2026,40 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ParticleSystem particleSystem{};
 	particleSystem.Initialize();
 
-	// エミッターの初期化
-	ParticleEmitter particleEmitter{};
-	particleEmitter.Initialize({0.0f, 0.0f, 0.0f}, 3, 0.5f);
+	// Emitter一覧
+	std::vector<EmitterInstance> emitterInstances;
+
+	// 最初のEmitterを1個生成
+	emitterInstances.push_back(CreateEmitterInstance(device, {0.0f, 0.0f, 0.0f}));
 
 	// Particleの一時停止フラグ
 	bool isParticlePause = false;
 
 	// ビルボードの有効化
 	bool useBillboard = true;
+
+
+	// デバッグ表示用のMaterial Resource
+	Microsoft::WRL::ComPtr<ID3D12Resource> emitterWireMaterialResource = CreateBufferResource(device, sizeof(Material));
+
+	Material *emitterWireMaterialData = nullptr;
+
+	hr = emitterWireMaterialResource->Map(0, nullptr, reinterpret_cast<void **>(&emitterWireMaterialData));
+
+	assert(SUCCEEDED(hr));
+
+	// ワイヤーフレームの色
+	emitterWireMaterialData->color = {1.0f, 0.7f, 0.1f, 1.0f};
+
+	// ライティングなし
+	emitterWireMaterialData->lightingType = LIGHTING_NONE;
+
+	// UV変換なし
+	emitterWireMaterialData->uvTransform = Matrix4x4::MakeIdentity4x4();
+
+	// Emitterの範囲表示
+	bool showEmitterBounds = true;
+
 
 	// ライティング方式
 	int lightingType = LIGHTING_HALF_LAMBERT;
@@ -2049,70 +2191,115 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		particleSystem.SetBillboardEnabled(useBillboard);
 
 
-		// エミッターの設定
-		ImGui::SeparatorText("Emitter Settings");
+		ImGui::SeparatorText("Emitter Create");
 
-		if (ImGui::Button("Add Particle")) {
-			particleEmitter.Emit(particleSystem);
+		// Emitterを追加
+		if (ImGui::Button("Create Emitter")) {
+			Vector3 position{static_cast<float>(emitterInstances.size()) * 2.0f, 0.0f, 0.0f};
+
+			emitterInstances.push_back(CreateEmitterInstance(device, position));
 		}
 
-		// エミッターの有効・無効
-		bool emitterEnabled = particleEmitter.IsEnabled();
+		ImGui::Checkbox("Show Emitter Bounds", &showEmitterBounds);
 
-		if (ImGui::Checkbox("Enable Emitter", &emitterEnabled)) {
-			particleEmitter.SetEnabled(emitterEnabled);
+		ImGui::SeparatorText("Emitter List");
+
+		for (int32_t emitterIndex = 0; emitterIndex < static_cast<int32_t>(emitterInstances.size()); ++emitterIndex) {
+
+			EmitterInstance &instance = emitterInstances[emitterIndex];
+			ParticleEmitter &emitter = instance.emitter;
+
+			ImGui::PushID(emitterIndex);
+
+			bool shouldDelete = false;
+
+			std::string label = std::format("Emitter {}", emitterIndex);
+
+			if (ImGui::TreeNode(label.c_str())) {
+
+				// 即時発生
+				if (ImGui::Button("Add Particle")) {
+					emitter.Emit(particleSystem);
+				}
+
+				// 有効・無効
+				bool enabled = emitter.IsEnabled();
+
+				if (ImGui::Checkbox("Enable Emitter", &enabled)) {
+					emitter.SetEnabled(enabled);
+				}
+
+				// 位置
+				Vector3 position = emitter.GetTransform().translate;
+
+				if (ImGui::DragFloat3("Position", &position.x, 0.05f)) {
+					emitter.SetPosition(position);
+				}
+
+				// 発生数
+				int count = static_cast<int>(emitter.GetCount());
+
+				if (ImGui::SliderInt("Emit Count", &count, 0, 100)) {
+					emitter.SetCount(static_cast<uint32_t>(count));
+				}
+
+				// 発生頻度
+				float frequency = emitter.GetFrequency();
+
+				if (ImGui::DragFloat("Emit Frequency", &frequency, 0.01f, 0.0f, 10.0f)) {
+					emitter.SetFrequency(frequency);
+				}
+
+				// 発生設定
+				ParticleSpawnSettings &settings = emitter.GetSpawnSettings();
+
+				ImGui::SeparatorText("Spawn Settings");
+
+				// 発生位置のランダム幅
+				ImGui::DragFloat3("Position Range", &settings.positionRange.x, 0.05f, 0.0f, 100.0f);
+
+				// 初速度
+				ImGui::DragFloat3("Base Velocity", &settings.baseVelocity.x, 0.05f, -100.0f, 100.0f);
+
+				// 速度のランダム幅
+				ImGui::DragFloat3("Velocity Range", &settings.velocityRange.x, 0.05f, 0.0f, 100.0f);
+
+				// 基準色
+				ImGui::ColorEdit4("Base Color", &settings.baseColor.x);
+
+				// 色のランダム幅
+				ImGui::DragFloat3("Color Range", &settings.colorRange.x, 0.01f, 0.0f, 1.0f);
+
+				// 寿命
+				ImGui::DragFloat("Min Lifetime", &settings.minLifetime, 0.05f, 0.01f, 30.0f);
+
+				// 最大寿命
+				ImGui::DragFloat("Max Lifetime", &settings.maxLifetime, 0.05f, 0.01f, 30.0f);
+
+				// 最小寿命が最大寿命を超えないようにする
+				if (settings.minLifetime > settings.maxLifetime) {
+					settings.maxLifetime = settings.minLifetime;
+				}
+
+				// エミッターの削除
+				if (ImGui::Button("Delete Emitter")) {
+					shouldDelete = true;
+				}
+
+				ImGui::TreePop();
+			}
+
+			ImGui::PopID();
+
+			if (shouldDelete) {
+				// GPUがリソースを使い終わってから破棄する
+				directXCore->WaitForGPU();
+
+				emitterInstances.erase(emitterInstances.begin() + emitterIndex);
+
+				break;
+			}
 		}
-
-		// Emitterの位置
-		static Vector3 emitterPosition{0.0f, 0.0f, 0.0f};
-
-		ImGui::DragFloat3("Emitter Position", &emitterPosition.x, 0.05f);
-
-		particleEmitter.SetPosition(emitterPosition);
-
-		// 1回の発生数
-		int emitterCount = static_cast<int>(particleEmitter.GetCount());
-
-		if (ImGui::SliderInt("Emit Count", &emitterCount, 0, 100)) {
-			particleEmitter.SetCount(static_cast<uint32_t>(emitterCount));
-		}
-
-		// 発生間隔
-		float emitterFrequency = particleEmitter.GetFrequency();
-
-		if (ImGui::DragFloat("Emit Frequency", &emitterFrequency, 0.01f, 0.01f, 10.0f)) {
-			particleEmitter.SetFrequency(emitterFrequency);
-		}
-
-		// 生成設定を取得
-		ParticleSpawnSettings &settings = particleEmitter.GetSpawnSettings();
-
-		// 発生位置のランダム幅
-		ImGui::DragFloat3("Spawn Position Range", &settings.positionRange.x, 0.05f, 0.0f, 100.0f);
-
-		// 初速度
-		ImGui::DragFloat3("Base Velocity", &settings.baseVelocity.x, 0.05f, -100.0f, 100.0f);
-
-		// 速度のランダム幅
-		ImGui::DragFloat3("Velocity Range", &settings.velocityRange.x, 0.05f, 0.0f, 100.0f);
-
-		// 基準色
-		ImGui::ColorEdit4("Base Color", &settings.baseColor.x);
-
-		// 色のランダム幅
-		ImGui::DragFloat3("Color Range", &settings.colorRange.x, 0.01f, 0.0f, 1.0f);
-
-		// 最小寿命
-		ImGui::DragFloat("Min Lifetime", &settings.minLifetime, 0.05f, 0.01f, 30.0f);
-
-		// 最大寿命
-		ImGui::DragFloat("Max Lifetime", &settings.maxLifetime, 0.05f, 0.01f, 30.0f);
-
-		// 最小値と最大値の大小関係を維持
-		if (settings.minLifetime > settings.maxLifetime) {
-			settings.maxLifetime = settings.minLifetime;
-		}
-
 
 
 		ImGui::SeparatorText("Model Create");
@@ -2234,14 +2421,48 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			object.materialData->uvTransform = objectUvTransformMatrix;
 		}
 
-		// エミッターから粒子を発生させる
-		particleEmitter.Update(deltaTime, particleSystem);
+		// すべてのEmitterを更新
+		for (EmitterInstance &instance : emitterInstances) {
+			instance.emitter.Update(deltaTime, particleSystem);
+		}
 
 		// カメラの回転行列を取得
 		const Matrix4x4 &cameraMatrix = debugCamera->GetCameraRotationMatrix();
 
 		// パーティクルの更新
 		particleSystem.Update(deltaTime, debugCamera->GetViewProjectionMatrix(), cameraMatrix, instancingData);
+
+		// すべてのEmitterのワイヤーフレームを更新
+		for (EmitterInstance &instance : emitterInstances) {
+
+			// Emitterの生成設定
+			const ParticleSpawnSettings &settings = instance.emitter.GetSpawnSettings();
+
+			// EmitterのTransform
+			const Transform &emitterTransform = instance.emitter.GetTransform();
+
+			// ワイヤーフレームのTransform
+			Transform wireTransform{};
+
+			// 生成範囲をScaleに反映
+			wireTransform.scale = settings.positionRange;
+
+			// 現在はAABBなので回転なし
+			wireTransform.rotate = {0.0f, 0.0f, 0.0f};
+
+			// Emitterの位置を中心にする
+			wireTransform.translate = emitterTransform.translate;
+
+			// World行列
+			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(wireTransform);
+
+			// WVP行列
+			Matrix4x4 wvpMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
+
+			// EmitterごとのGPUリソースへ書き込む
+			instance.wvpData->world = worldMatrix;
+			instance.wvpData->WVP = wvpMatrix;
+		}
 
 
 		// Sprite用のWorldViewProjectionMatrixを作る
@@ -2328,6 +2549,39 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// Particleの描画処理
 		particleSystem.Draw(particleDrawContext);
 
+
+		// ===========================================================
+		// Emitterの範囲をワイヤーフレームで描画
+		// ===========================================================
+
+		if (showEmitterBounds && !emitterInstances.empty()) {
+
+			// 全Emitterで共通の描画設定
+			commandList->SetGraphicsRootSignature(rootSignature.Get());
+
+			commandList->SetPipelineState(emitterLinePipelineState.Get());
+
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+
+			commandList->IASetVertexBuffers(0, 1, &emitterWireMeshResource.vertexBufferView);
+
+			commandList->SetGraphicsRootConstantBufferView(0, emitterWireMaterialResource->GetGPUVirtualAddress());
+
+			commandList->SetGraphicsRootDescriptorTable(2, white1x1TextureSrvHandleGPU);
+
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+
+			// Emitterごとに異なるWVPで描画
+			for (const EmitterInstance &instance : emitterInstances) {
+
+				commandList->SetGraphicsRootConstantBufferView(1, instance.wvpResource->GetGPUVirtualAddress());
+
+				commandList->DrawInstanced(static_cast<UINT>(emitterWireMeshResource.vertices.size()), 1, 0, 0);
+			}
+		}
+
+
+		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		// Sprite描画用にRootSignatureを戻す
 		commandList->SetGraphicsRootSignature(rootSignature.Get());
