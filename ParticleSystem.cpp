@@ -1,19 +1,32 @@
 #include "ParticleSystem.h"
 #include <cassert>
+#include <random>
 
 void ParticleSystem::Initialize() {
-	for (uint32_t i = 0; i < kNumInstance; ++i) {
+	for (uint32_t i = 0; i < kNumMaxInstance; ++i) {
 		particles_[i].transform.scale = {1.0f, 1.0f, 1.0f};
 		particles_[i].transform.rotate = {0.0f, 0.0f, 0.0f};
 		particles_[i].transform.translate = {i * 0.1f, i * 0.1f, i * 0.1f};
 		particles_[i].velocity = {0.0f, 1.0f, 0.0f};
+		particles_[i].lifetime = 5.0f;
+		particles_[i].currentTime = 0.0f;
 	}
 }
 
-void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, TransformationMatrix *instancingData) {
+void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, ParticleForGPU *instancingData) {
 	assert(instancingData != nullptr);
 
-	for (uint32_t i = 0; i < kNumInstance; ++i) {
+	numAliveParticles_ = 0;
+
+	for (uint32_t i = 0; i < kNumMaxInstance; ++i) {
+		particles_[i].currentTime += deltaTime;
+
+		// パーティクルの寿命が尽きていたら更新しない
+		if (particles_[i].currentTime >= particles_[i].lifetime) {
+			continue;
+		}
+
+
 		// 速度の反映
 		particles_[i].transform.translate += particles_[i].velocity * deltaTime;
 
@@ -24,9 +37,14 @@ void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatr
 		// WorldViewProjection行列
 		Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, viewProjectionMatrix);
 
-		// Instancing用Resourceに書き込む
-		instancingData[i].WVP = worldViewProjectionMatrix;
-		instancingData[i].World = worldMatrix;
+		// 生存しているパーティクルだけを先頭から詰める
+		instancingData[numAliveParticles_].WVP = worldViewProjectionMatrix;
+
+		instancingData[numAliveParticles_].world = worldMatrix;
+
+		instancingData[numAliveParticles_].color = particles_[i].color;
+
+		++numAliveParticles_;
 	}
 }
 
@@ -37,6 +55,11 @@ void ParticleSystem::Draw(const ParticleDrawContext &context) {
 	assert(commandList != nullptr);
 	assert(context.rootSignature != nullptr);
 	assert(context.pipelineState != nullptr);
+
+	// 生存しているパーティクルがなければ描画しない
+	if (numAliveParticles_ == 0) {
+		return;
+	}
 
 	// Particle用RootSignatureを設定
 	commandList->SetGraphicsRootSignature(context.rootSignature);
@@ -60,5 +83,5 @@ void ParticleSystem::Draw(const ParticleDrawContext &context) {
 	commandList->SetGraphicsRootDescriptorTable(2, context.textureSrvHandleGPU);
 
 	// Instancing描画
-	commandList->DrawInstanced(context.vertexCount, kNumInstance, 0, 0);
+	commandList->DrawInstanced(context.vertexCount, numAliveParticles_, 0, 0);
 }

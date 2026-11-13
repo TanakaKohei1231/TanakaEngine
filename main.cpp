@@ -35,6 +35,7 @@
 #include "DirectXCore.h"
 #include "DirectXResourceLeakChecker.h"
 #include "ParticleSystem.h"
+#include "Vector4.h"
 
 
 
@@ -83,10 +84,6 @@ enum BlendMode {
 	BLEND_MODE_SCREEN,
 
 	BLEND_MODE_COUNT,
-};
-
-struct Vector4 {
-	float x, y, z, w;
 };
 
 struct VertexData {
@@ -991,7 +988,7 @@ Object3DInstance CreateObject3DInstance(
 	assert(SUCCEEDED(hr));
 
 	object.wvpData->WVP = Matrix4x4::MakeIdentity4x4();
-	object.wvpData->World = Matrix4x4::MakeIdentity4x4();
+	object.wvpData->world = Matrix4x4::MakeIdentity4x4();
 
 	return object;
 }
@@ -1371,7 +1368,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// 単位行列を書き込んでおく
 	wvpData->WVP = Matrix4x4::MakeIdentity4x4();
-	wvpData->World = Matrix4x4::MakeIdentity4x4();
+	wvpData->world = Matrix4x4::MakeIdentity4x4();
 
 	// モデル読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
@@ -1410,19 +1407,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ===========================================================
 
 	// Instancing用のTransformationMatrixリソースを作る
-	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource = CreateBufferResource(device, sizeof(TransformationMatrix) * ParticleSystem::kNumInstance);
+	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource = CreateBufferResource(device, sizeof(ParticleForGPU) * ParticleSystem::kNumMaxInstance);
 
 	// 書き込むためのアドレスを取得
-	TransformationMatrix *instancingData = nullptr;
+	ParticleForGPU *instancingData = nullptr;
+
 
 	hr = instancingResource->Map(0, nullptr, reinterpret_cast<void **>(&instancingData));
 
 	assert(SUCCEEDED(hr));
 
 	// 単位行列を書き込んでおく
-	for (uint32_t index = 0; index < ParticleSystem::kNumInstance; ++index) {
+	for (uint32_t index = 0; index < ParticleSystem::kNumMaxInstance; ++index) {
 		instancingData[index].WVP = Matrix4x4::MakeIdentity4x4();
-		instancingData[index].World = Matrix4x4::MakeIdentity4x4();
+		instancingData[index].world = Matrix4x4::MakeIdentity4x4();
+		instancingData[index].color = {1.0f, 1.0f, 1.0f, 1.0f};
 	}
 
 	ModelData sphereModelData = CreateSphereModelData(16, 1.0f);
@@ -1461,7 +1460,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// 単位行列を書きこんでおく
 	transformationMatrixDataSprite->WVP = Matrix4x4::MakeIdentity4x4();
-	transformationMatrixDataSprite->World = Matrix4x4::MakeIdentity4x4();
+	transformationMatrixDataSprite->world = Matrix4x4::MakeIdentity4x4();
 
 	VertexData *vertexDataSprite = nullptr;
 	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void **>(&vertexDataSprite));
@@ -1699,8 +1698,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	instancingSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 	instancingSrvDesc.Buffer.FirstElement = 0;
 	instancingSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-	instancingSrvDesc.Buffer.NumElements = ParticleSystem::kNumInstance;
-	instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
+	instancingSrvDesc.Buffer.NumElements = ParticleSystem::kNumMaxInstance;
+	instancingSrvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
 
 	// DescriptorHeapの7番に登録
 	D3D12_CPU_DESCRIPTOR_HANDLE instancingSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 7);
@@ -2106,7 +2105,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
 
 			object.wvpData->WVP = worldViewProjectionMatrix;
-			object.wvpData->World = worldMatrix;
+			object.wvpData->world = worldMatrix;
 
 			object.materialData->color = object.color;
 			object.materialData->lightingType = object.lightingType;
@@ -2130,7 +2129,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		Matrix4x4 worldViewProjectionMatrixSprite = Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
 
 		transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
-		transformationMatrixDataSprite->World = worldMatrixSprite;
+		transformationMatrixDataSprite->world = worldMatrixSprite;
 
 		Matrix4x4 uvTransformMatrix = Matrix4x4::MakeScaleMatrix(uvTransformSprite.scale);
 		uvTransformMatrix = Matrix4x4::Multiply(uvTransformMatrix, Matrix4x4::MakeRotateZMatrix(uvTransformSprite.rotate.z));
@@ -2203,11 +2202,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			}
 		}
 
-		// ===========================================================
-		// Particleの描画処理
-		// ===========================================================
 
+		// Particleの描画処理
 		particleSystem.Draw(particleDrawContext);
+
 
 		// Sprite描画用にRootSignatureを戻す
 		commandList->SetGraphicsRootSignature(rootSignature.Get());
