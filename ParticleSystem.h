@@ -13,6 +13,7 @@ struct Particle {
 	Vector4 color{1.0f, 1.0f, 1.0f, 1.0f};
 	float lifetime = 0.0f;
 	float currentTime = 0.0f;
+	bool isActive = false;
 };
 
 // パーティクルの描画に必要な情報
@@ -38,13 +39,23 @@ struct ParticleForGPU {
 
 // パーティクルの発生設定
 struct ParticleSpawnSettings {
+	// 発生中心
 	Vector3 position{0.0f, 0.0f, 0.0f};
 
-	// 発生位置のばらつき
+	// 発生位置のランダム幅（±）
 	Vector3 positionRange{1.0f, 1.0f, 1.0f};
 
-	// 初速度のばらつき
+	// 初速度の基準値
+	Vector3 baseVelocity{0.0f, 0.0f, 0.0f};
+
+	// 初速度のランダム幅（±）
 	Vector3 velocityRange{1.0f, 1.0f, 1.0f};
+
+	// 基準色
+	Vector4 baseColor{0.5f, 0.5f, 0.5f, 1.0f};
+
+	// RGBのランダム幅（±）
+	Vector3 colorRange{0.5f, 0.5f, 0.5f};
 
 	// 寿命
 	float minLifetime = 1.0f;
@@ -59,17 +70,22 @@ class ParticleSystem {
 
 	void Draw(const ParticleDrawContext &context) const;
 
+	// 指定数のパーティクルを生成
+	uint32_t Emit(const ParticleSpawnSettings &settings, uint32_t count);
+
 
 	// Billboardの有効・無効
 	void SetBillboardEnabled(bool enabled) { useBillboard_ = enabled; }
 
 	bool IsBillboardEnabled() const { return useBillboard_; }
 
+	uint32_t GetAliveCount() const { return numAliveParticles_; }
+
 	// インスタンス数
-	static inline const uint32_t kNumMaxInstance = 10;
+	static inline const uint32_t kNumMaxInstance = 100;
 
   private:
-	std::array<Particle, kNumMaxInstance> particles_;
+	std::array<Particle, kNumMaxInstance> particles_{};
 
 	// 描画対象のパーティクル数
 	uint32_t numAliveParticles_ = 0;

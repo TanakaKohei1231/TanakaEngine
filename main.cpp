@@ -36,6 +36,7 @@
 #include "DirectXResourceLeakChecker.h"
 #include "ParticleSystem.h"
 #include "Vector4.h"
+#include "ParticleEmitter.h"
 
 
 
@@ -1908,6 +1909,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ParticleSystem particleSystem{};
 	particleSystem.Initialize();
 
+	// エミッターの初期化
+	ParticleEmitter particleEmitter{};
+	particleEmitter.Initialize({0.0f, 0.0f, 0.0f}, 3, 0.5f);
+
+	// Particleの一時停止フラグ
+	bool isParticlePause = false;
+
 	// ビルボードの有効化
 	bool useBillboard = true;
 
@@ -1932,7 +1940,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 生成済みオブジェクト一覧
 	std::vector<Object3DInstance> objectInstances;
 
-	float deltaTime = 1.0f / 60.0f;
+	// ImGuiで設定するパーティクルの更新速度
+	float imguiDeltaTime = 1.0f / 60.0f;
+
+	// パーティクルの更新速度
+	float deltaTime = imguiDeltaTime;
 
 	// ===========================================================
 	// メインループ
@@ -2021,20 +2033,85 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		}
 
 		// 一時停止
-		if (ImGui::Button("ParticlePause")) {
-			if (deltaTime == 0.0f) {
-				deltaTime = 1.0f / 60.0f;
-			} else {
-				deltaTime = 0.0f;
-			}
-		}
+		ImGui::Checkbox("Particle Pause", &isParticlePause);
 
 		// パーティクルの実行速度
-		ImGui::DragFloat("Particle Execution speed", &deltaTime, 0.001f, 0.0f, 1.0f / 60.0f);
+		ImGui::DragFloat("Particle Execution speed", &imguiDeltaTime, 0.001f, 0.0f, 1.0f / 60.0f);
+
+		if (isParticlePause) {
+			deltaTime = 0.0f;
+		} else {
+			deltaTime = imguiDeltaTime;
+		}
 
 		// ビルボードの有効化
 		ImGui::Checkbox("Use Billboard", &useBillboard);
 		particleSystem.SetBillboardEnabled(useBillboard);
+
+
+		// エミッターの設定
+		ImGui::SeparatorText("Emitter Settings");
+
+		if (ImGui::Button("Add Particle")) {
+			particleEmitter.Emit(particleSystem);
+		}
+
+		// エミッターの有効・無効
+		bool emitterEnabled = particleEmitter.IsEnabled();
+
+		if (ImGui::Checkbox("Enable Emitter", &emitterEnabled)) {
+			particleEmitter.SetEnabled(emitterEnabled);
+		}
+
+		// Emitterの位置
+		static Vector3 emitterPosition{0.0f, 0.0f, 0.0f};
+
+		ImGui::DragFloat3("Emitter Position", &emitterPosition.x, 0.05f);
+
+		particleEmitter.SetPosition(emitterPosition);
+
+		// 1回の発生数
+		int emitterCount = static_cast<int>(particleEmitter.GetCount());
+
+		if (ImGui::SliderInt("Emit Count", &emitterCount, 0, 100)) {
+			particleEmitter.SetCount(static_cast<uint32_t>(emitterCount));
+		}
+
+		// 発生間隔
+		float emitterFrequency = particleEmitter.GetFrequency();
+
+		if (ImGui::DragFloat("Emit Frequency", &emitterFrequency, 0.01f, 0.01f, 10.0f)) {
+			particleEmitter.SetFrequency(emitterFrequency);
+		}
+
+		// 生成設定を取得
+		ParticleSpawnSettings &settings = particleEmitter.GetSpawnSettings();
+
+		// 発生位置のランダム幅
+		ImGui::DragFloat3("Spawn Position Range", &settings.positionRange.x, 0.05f, 0.0f, 100.0f);
+
+		// 初速度
+		ImGui::DragFloat3("Base Velocity", &settings.baseVelocity.x, 0.05f, -100.0f, 100.0f);
+
+		// 速度のランダム幅
+		ImGui::DragFloat3("Velocity Range", &settings.velocityRange.x, 0.05f, 0.0f, 100.0f);
+
+		// 基準色
+		ImGui::ColorEdit4("Base Color", &settings.baseColor.x);
+
+		// 色のランダム幅
+		ImGui::DragFloat3("Color Range", &settings.colorRange.x, 0.01f, 0.0f, 1.0f);
+
+		// 最小寿命
+		ImGui::DragFloat("Min Lifetime", &settings.minLifetime, 0.05f, 0.01f, 30.0f);
+
+		// 最大寿命
+		ImGui::DragFloat("Max Lifetime", &settings.maxLifetime, 0.05f, 0.01f, 30.0f);
+
+		// 最小値と最大値の大小関係を維持
+		if (settings.minLifetime > settings.maxLifetime) {
+			settings.maxLifetime = settings.minLifetime;
+		}
 
 
 
@@ -2156,6 +2233,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			object.materialData->uvTransform = objectUvTransformMatrix;
 		}
+
+		// エミッターから粒子を発生させる
+		particleEmitter.Update(deltaTime, particleSystem);
 
 		// カメラの回転行列を取得
 		const Matrix4x4 &cameraMatrix = debugCamera->GetCameraRotationMatrix();
