@@ -34,6 +34,7 @@
 #include "StringUtility.h"
 #include "DirectXCore.h"
 #include "DirectXResourceLeakChecker.h"
+#include "ParticleSystem.h"
 
 
 
@@ -99,11 +100,6 @@ struct Material {
 	int32_t lightingType;
 	float padding[3];
 	Matrix4x4 uvTransform;
-};
-
-struct TransformationMatrix {
-	Matrix4x4 WVP;
-	Matrix4x4 World;
 };
 
 struct DirectionalLight {
@@ -191,11 +187,6 @@ struct Object3DInstance {
 
 	Microsoft::WRL::ComPtr<ID3D12Resource> wvpResource;
 	TransformationMatrix *wvpData;
-};
-
-struct Particle {
-	Transform transform;
-	Vector3 velocty;
 };
 
 // ログファイル作成関数
@@ -1418,11 +1409,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// Instancing用Resourceの作成
 	// ===========================================================
 
-	// インスタンス数
-	const uint32_t kNumInstance = 10;
-
 	// Instancing用のTransformationMatrixリソースを作る
-	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource = CreateBufferResource(device, sizeof(TransformationMatrix) * kNumInstance);
+	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource = CreateBufferResource(device, sizeof(TransformationMatrix) * ParticleSystem::kNumInstance);
 
 	// 書き込むためのアドレスを取得
 	TransformationMatrix *instancingData = nullptr;
@@ -1432,18 +1420,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	assert(SUCCEEDED(hr));
 
 	// 単位行列を書き込んでおく
-	for (uint32_t index = 0; index < kNumInstance; ++index) {
+	for (uint32_t index = 0; index < ParticleSystem::kNumInstance; ++index) {
 		instancingData[index].WVP = Matrix4x4::MakeIdentity4x4();
 		instancingData[index].World = Matrix4x4::MakeIdentity4x4();
-	}
-
-	// Particle用Transformの作成
-	Particle particles[kNumInstance];
-
-	for (uint32_t index = 0; index < kNumInstance; ++index) {
-		particles[index].transform.scale = {1.0f, 1.0f, 1.0f};
-		particles[index].transform.rotate = {0.0f, 0.0f, 0.0f};
-		particles[index].transform.translate = {index * 0.1f, index * 0.1f, index * 0.1f};
 	}
 
 	ModelData sphereModelData = CreateSphereModelData(16, 1.0f);
@@ -1720,7 +1699,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	instancingSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 	instancingSrvDesc.Buffer.FirstElement = 0;
 	instancingSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-	instancingSrvDesc.Buffer.NumElements = kNumInstance;
+	instancingSrvDesc.Buffer.NumElements = ParticleSystem::kNumInstance;
 	instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
 
 	// DescriptorHeapの7番に登録
@@ -1838,6 +1817,25 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	);
 
 
+	
+	ParticleDrawContext particleDrawContext{};
+
+	particleDrawContext.commandList = commandList.Get();
+	particleDrawContext.rootSignature = particleRootSignature.Get();
+	particleDrawContext.pipelineState = particlePipelineState.Get();
+
+	particleDrawContext.vertexBufferView = particleMeshResource.vertexBufferView;
+
+	particleDrawContext.materialBufferAddress = materialResource->GetGPUVirtualAddress();
+
+	particleDrawContext.instancingSrvHandleGPU = instancingSrvHandleGPU;
+
+	particleDrawContext.textureSrvHandleGPU = textureSrvHandleGPU;
+
+	particleDrawContext.vertexCount = static_cast<uint32_t>(particleMeshResource.vertices.size());
+
+
+
 	// ===========================================================
 	// XAudio2の初期化
 	// ===========================================================
@@ -1882,6 +1880,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	uvTransformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	uvTransformSprite.translate = {0.0f, 0.0f, 0.0f};
 
+	// Particleの初期化
+	ParticleSystem particleSystem{};
+	particleSystem.Initialize();
+
 	// ライティング方式
 	int lightingType = LIGHTING_HALF_LAMBERT;
 
@@ -1910,11 +1912,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	initialObjectTransform.translate = {0.0f, 0.0f, 0.0f};
 
 	objectInstances.push_back(CreateObject3DInstance(device, 0, initialObjectTransform));
-
-	// パーティクルに初期速度を与える
-	for (uint32_t i = 0; i < kNumInstance; ++i) {
-		particles[i].velocty = {0.0f, 1.0f, 0.0f};
-	}
 
 	const float kDeltaTime = 1.0f / 60.0f;
 
@@ -1994,6 +1991,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::Text("Left Stick : Pivot Rotate Camera");
 		ImGui::Text("LT / RT : Move Camera Z");
 		ImGui::Text("D-Pad : Move Camera XY");
+
+
+		ImGui::SeparatorText("Particle");
+
+		if (ImGui::Button("ParticleInitialize")) {
+			particleSystem.Initialize();
+		}
 
 		ImGui::SeparatorText("Model Create");
 
@@ -2114,32 +2118,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			object.materialData->uvTransform = objectUvTransformMatrix;
 		}
 
-			// ===========================================================
-			// Particleの更新処理
-			// ===========================================================
 
-			
-			for (uint32_t i = 0; i < kNumInstance; ++i) {
-				// 速度の反映
-				particles[i].transform.translate += particles[i].velocty * kDeltaTime;
+		// パーティクルの更新
+		particleSystem.Update(kDeltaTime, debugCamera->GetViewProjectionMatrix(), instancingData);
 
-				// 各インスタンスのTransformを行列に変換する
-				// World行列
-				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(particles[i].transform);
 
-				// WorldViewProjection行列
-				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
-
-				// Instancing用Resourceに書き込む
-				instancingData[i].WVP = worldViewProjectionMatrix;
-				instancingData[i].World = worldMatrix;
-			}
-
-			// Sprite用のWorldViewProjectionMatrixを作る
-			Matrix4x4 worldMatrixSprite = Matrix4x4::MakeAffineMatrix(transformSprite);
-			Matrix4x4 viewMatrixSprite = Matrix4x4::MakeIdentity4x4();
-			Matrix4x4 projectionMatrixSprite = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f, float(Window::kClientWidth), float(Window::kClientHeight), 0.0f, 100.0f);
-			Matrix4x4 worldViewProjectionMatrixSprite = Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
+		// Sprite用のWorldViewProjectionMatrixを作る
+		Matrix4x4 worldMatrixSprite = Matrix4x4::MakeAffineMatrix(transformSprite);
+		Matrix4x4 viewMatrixSprite = Matrix4x4::MakeIdentity4x4();
+		Matrix4x4 projectionMatrixSprite = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f, float(Window::kClientWidth), float(Window::kClientHeight), 0.0f, 100.0f);
+		Matrix4x4 worldViewProjectionMatrixSprite = Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
 
 		transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
 		transformationMatrixDataSprite->World = worldMatrixSprite;
@@ -2215,39 +2203,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			}
 		}
 
-			// ===========================================================
-			// Particleの描画処理
-			// ===========================================================
+		// ===========================================================
+		// Particleの描画処理
+		// ===========================================================
 
-			// Particle用RootSignatureを設定
-			commandList->SetGraphicsRootSignature(particleRootSignature.Get());
+		particleSystem.Draw(particleDrawContext);
 
-			// Particle用PSOを設定
-			commandList->SetPipelineState(particlePipelineState.Get());
+		// Sprite描画用にRootSignatureを戻す
+		commandList->SetGraphicsRootSignature(rootSignature.Get());
 
-			// 三角形として描画
-			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-			// Particle用VertexBufferを設定
-			commandList->IASetVertexBuffers(0, 1, &particleMeshResource.vertexBufferView);
-
-			// Material用CBVを設定
-			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
-
-			// Instancing用StructuredBufferのSRVを設定
-			commandList->SetGraphicsRootDescriptorTable(1, instancingSrvHandleGPU);
-
-			// Texture用SRVを設定
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-
-			// 6頂点の四角形を10個分Instancing描画
-			commandList->DrawInstanced(UINT(particleMeshResource.vertices.size()), kNumInstance, 0, 0);
-
-			// Sprite描画用にRootSignatureを戻す
-			commandList->SetGraphicsRootSignature(rootSignature.Get());
-
-			// Sprite用BlendModeをNormalに戻す
-			commandList->SetPipelineState(graphicsPipelineStates[BLEND_MODE_NORMAL].Get());
+		// Sprite用BlendModeをNormalに戻す
+		commandList->SetPipelineState(graphicsPipelineStates[BLEND_MODE_NORMAL].Get());
 
 		// Sprite用TextureをuvCheckerに戻す
 		commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);

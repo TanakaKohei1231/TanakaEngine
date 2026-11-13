@@ -46,7 +46,7 @@ void Window::Initialize() {
 	// ウィンドウの生成
 	hwnd_ = CreateWindow(
 		wc_.lpszClassName, // クラス名
-		L"CG2", // タイトルバーの文字
+		L"LE2C_18_タナカ_コウヘイ", // タイトルバーの文字
 		WS_OVERLAPPEDWINDOW, // ウィンドウスタイル
 		CW_USEDEFAULT, // x座標
 		CW_USEDEFAULT, // y座標

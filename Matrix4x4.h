@@ -95,3 +95,9 @@ class Matrix4x4 {
 		return !(*this == obj);
 	}
 };
+
+
+struct TransformationMatrix {
+	Matrix4x4 WVP;
+	Matrix4x4 World;
+};
