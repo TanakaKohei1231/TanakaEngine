@@ -1273,13 +1273,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	particleInputLayoutDesc.NumElements = _countof(particleInputElementDescs);
 
 	// Particle用BlendState
-	D3D12_BLEND_DESC particleBlendDesc = CreateBlendDesc(BLEND_MODE_NORMAL);
+	D3D12_BLEND_DESC particleBlendDesc = CreateBlendDesc(BLEND_MODE_ADD);
 
 	// Particle用RasterizerState
 	D3D12_RASTERIZER_DESC particleRasterizerDesc = rasterizerDesc;
 
 	// Particle用DepthStencilState
 	D3D12_DEPTH_STENCIL_DESC particleDepthStencilDesc = depthStencilDesc;
+
+	// ParticleはDepthを書き込まない
+	particleDepthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 
 	// Particle用VertexShaderのコンパイル
 	Microsoft::WRL::ComPtr<IDxcBlob> particleVertexShaderBlob = CompileShader(L"Particle.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
@@ -1543,6 +1546,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	const DirectX::TexMetadata &fenceMetadata = fenceMipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> fenceTextureResource = CreateTextureResource(device, fenceMetadata);
 
+	// Particle用のTextureを読んで転送する
+	DirectX::ScratchImage circleMipImages = LoadTexture("resources/circle.png");
+	const DirectX::TexMetadata &circleMetadata = circleMipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> circleTextureResource = CreateTextureResource(device, circleMetadata);
+
+
 	// Texture転送用のCommandListを準備
 	hr = commandAllocator->Reset();
 	assert(SUCCEEDED(hr));
@@ -1552,16 +1561,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// Textureデータを転送するコマンドを積む
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = UploadTextureData(textureResource, mipImages, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 = UploadTextureData(textureResource2, mipImages2, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateMonsterBallResource = UploadTextureData(monsterBallTextureResource, monsterBallMipImages, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateCheckerBoardResource = UploadTextureData(checkerBoardTextureResource, checkerBoardMipImages, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateWhite1x1Resource = UploadTextureData(white1x1TextureResource, white1x1MipImages, device, commandList);
-	
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateFenceResource = UploadTextureData(fenceTextureResource, fenceMipImages, device, commandList);
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateCircleResource = UploadTextureData(circleTextureResource, circleMipImages, device, commandList);
 
 	// CommandListをCloseし、CommandQueueにExecuteCommandListsを使いキックする
 	hr = commandList->Close();
@@ -1587,6 +1592,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	intermediateCheckerBoardResource.Reset();
 	intermediateWhite1x1Resource.Reset();
 	intermediateFenceResource.Reset();
+	intermediateCircleResource.Reset();
 
 	// ===========================================================
 	// Texture用SRVの作成
@@ -1703,11 +1709,36 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// DescriptorHeapの7番に登録
 	D3D12_CPU_DESCRIPTOR_HANDLE instancingSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 7);
-
 	D3D12_GPU_DESCRIPTOR_HANDLE instancingSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 7);
 
 	// SRVを生成
 	device->CreateShaderResourceView(instancingResource.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
+
+	// ===========================================================
+	// circle.png用SRVの作成
+	// ===========================================================
+
+	// SRVの設定
+	D3D12_SHADER_RESOURCE_VIEW_DESC circleSrvDesc{};
+
+	// テクスチャのフォーマット
+	circleSrvDesc.Format = circleMetadata.format;
+
+	// RGBAのマッピング設定
+	circleSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+	// 2Dテクスチャとして扱う
+	circleSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+
+	// MipMapの数
+	circleSrvDesc.Texture2D.MipLevels = static_cast<UINT>(circleMetadata.mipLevels);
+
+	// DescriptorHeapの8番を使用
+	D3D12_CPU_DESCRIPTOR_HANDLE circleSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 8);
+	D3D12_GPU_DESCRIPTOR_HANDLE circleSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 8);
+
+	// SRVを生成
+	device->CreateShaderResourceView(circleTextureResource.Get(), &circleSrvDesc, circleSrvHandleCPU);
 
 	// 読み込み済みモデル一覧
 	std::vector<ModelResource> modelResources;
@@ -1816,21 +1847,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	);
 
 
-	
 	ParticleDrawContext particleDrawContext{};
 
 	particleDrawContext.commandList = commandList.Get();
 	particleDrawContext.rootSignature = particleRootSignature.Get();
 	particleDrawContext.pipelineState = particlePipelineState.Get();
-
 	particleDrawContext.vertexBufferView = particleMeshResource.vertexBufferView;
-
 	particleDrawContext.materialBufferAddress = materialResource->GetGPUVirtualAddress();
-
 	particleDrawContext.instancingSrvHandleGPU = instancingSrvHandleGPU;
-
-	particleDrawContext.textureSrvHandleGPU = textureSrvHandleGPU;
-
+	particleDrawContext.textureSrvHandleGPU = circleSrvHandleGPU;
 	particleDrawContext.vertexCount = static_cast<uint32_t>(particleMeshResource.vertices.size());
 
 

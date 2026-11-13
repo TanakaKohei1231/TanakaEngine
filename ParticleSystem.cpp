@@ -1,16 +1,15 @@
 #include "ParticleSystem.h"
+#include "Ease.h"
 #include <cassert>
-#include <random>
 
 void ParticleSystem::Initialize() {
+	ParticleSpawnSettings settings{};
+
 	for (uint32_t i = 0; i < kNumMaxInstance; ++i) {
-		particles_[i].transform.scale = {1.0f, 1.0f, 1.0f};
-		particles_[i].transform.rotate = {0.0f, 0.0f, 0.0f};
-		particles_[i].transform.translate = {i * 0.1f, i * 0.1f, i * 0.1f};
-		particles_[i].velocity = {0.0f, 1.0f, 0.0f};
-		particles_[i].lifetime = 5.0f;
-		particles_[i].currentTime = 0.0f;
+		particles_[i] = MakeNewParticle(settings);
 	}
+
+	numAliveParticles_ = 0;
 }
 
 void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatrix, ParticleForGPU *instancingData) {
@@ -37,12 +36,17 @@ void ParticleSystem::Update(float deltaTime, const Matrix4x4 &viewProjectionMatr
 		// WorldViewProjection行列
 		Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, viewProjectionMatrix);
 
+		// 生存時間の進行度
+		float t = particles_[i].currentTime / particles_[i].lifetime;
+
+		// イージングを使用して透明度を計算
+		float alpha = 1.0f - Ease::EaseIn(t);
+
 		// 生存しているパーティクルだけを先頭から詰める
 		instancingData[numAliveParticles_].WVP = worldViewProjectionMatrix;
-
 		instancingData[numAliveParticles_].world = worldMatrix;
-
 		instancingData[numAliveParticles_].color = particles_[i].color;
+		instancingData[numAliveParticles_].color.w = particles_[i].color.w * alpha;
 
 		++numAliveParticles_;
 	}
@@ -84,4 +88,44 @@ void ParticleSystem::Draw(const ParticleDrawContext &context) {
 
 	// Instancing描画
 	commandList->DrawInstanced(context.vertexCount, numAliveParticles_, 0, 0);
+}
+
+Particle ParticleSystem::MakeNewParticle(const ParticleSpawnSettings &settings) {
+	Particle particle{};
+
+	// -1.0～1.0の乱数
+	std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
+
+	// 0.0～1.0の乱数
+	std::uniform_real_distribution<float> colorDistribution(0.0f, 1.0f);
+
+	// 寿命の乱数
+	std::uniform_real_distribution<float> lifetimeDistribution(settings.minLifetime, settings.maxLifetime);
+
+	// 拡縮と回転
+	particle.transform.scale = {1.0f, 1.0f, 1.0f};
+	particle.transform.rotate = {0.0f, 0.0f, 0.0f};
+
+	// 発生位置
+	particle.transform.translate = {
+		settings.position.x + distribution(randomEngine_) * settings.positionRange.x,
+		settings.position.y + distribution(randomEngine_) * settings.positionRange.y,
+		settings.position.z + distribution(randomEngine_) * settings.positionRange.z
+	};
+
+	// 初速度
+	particle.velocity = {
+		distribution(randomEngine_) * settings.velocityRange.x,
+		distribution(randomEngine_) * settings.velocityRange.y,
+		distribution(randomEngine_) * settings.velocityRange.z
+	};
+
+	// 色
+	particle.color = {colorDistribution(randomEngine_), colorDistribution(randomEngine_), colorDistribution(randomEngine_), 1.0f};
+
+	// 寿命
+	particle.lifetime = lifetimeDistribution(randomEngine_);
+	particle.currentTime = 0.0f;
+
+	return particle;
 }

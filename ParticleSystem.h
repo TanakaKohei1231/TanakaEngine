@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <d3d12.h>
 #include <array>
+#include <random>
 
 struct Particle {
 	Transform transform{};
@@ -35,6 +36,21 @@ struct ParticleForGPU {
 	Vector4 color;
 };
 
+// パーティクルの発生設定
+struct ParticleSpawnSettings {
+	Vector3 position{0.0f, 0.0f, 0.0f};
+
+	// 発生位置のばらつき
+	Vector3 positionRange{1.0f, 1.0f, 1.0f};
+
+	// 初速度のばらつき
+	Vector3 velocityRange{1.0f, 1.0f, 1.0f};
+
+	// 寿命
+	float minLifetime = 1.0f;
+	float maxLifetime = 5.0f;
+};
+
 class ParticleSystem {
   public:
 	void Initialize();
@@ -51,4 +67,8 @@ class ParticleSystem {
 
 	// 描画対象のパーティクル数
 	uint32_t numAliveParticles_ = 0;
+
+	Particle MakeNewParticle(const ParticleSpawnSettings &settings);
+
+	std::mt19937 randomEngine_{std::random_device{}()};
 };
