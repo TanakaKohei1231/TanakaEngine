@@ -1,7 +1,7 @@
 #include "Input.h"
 #include <cassert>
 #include <string>
-#include "Window.h"
+#include "engine/platform/Window.h"
 
 #pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "dxguid.lib")

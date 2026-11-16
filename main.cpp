@@ -27,13 +27,13 @@
 #include <dinput.h>
 #include <Xinput.h>
 #include <unordered_map>
-#include "DebugCamera.h"
-#include "Input.h"
-#include "Window.h"
-#include "Logger.h"
-#include "StringUtility.h"
-#include "DirectXCore.h"
-#include "DirectXResourceLeakChecker.h"
+#include "engine/camera/DebugCamera.h"
+#include "engine/input/Input.h"
+#include "engine/platform/Window.h"
+#include "engine/utility/Logger.h"
+#include "engine/utility/StringUtility.h"
+#include "engine/graphics/DirectXCore.h"
+#include "engine/debug/DirectXResourceLeakChecker.h"
 
 
 
@@ -1148,10 +1148,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
 	// Shaderをコンパイルする
-	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"Object3D.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
+	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"resources/shaders/Object3D.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 	assert(vertexShaderBlob != nullptr);
 
-	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob = CompileShader(L"Object3D.PS.hlsl", L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
+	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob = CompileShader(L"resources/shaders/Object3D.PS.hlsl", L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 	assert(pixelShaderBlob != nullptr);
 
 	// DepthStencilStateの設定
@@ -1294,12 +1294,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	D3D12_DEPTH_STENCIL_DESC particleDepthStencilDesc = depthStencilDesc;
 
 	// Particle用VertexShaderのコンパイル
-	Microsoft::WRL::ComPtr<IDxcBlob> particleVertexShaderBlob = CompileShader(L"Particle.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
+	Microsoft::WRL::ComPtr<IDxcBlob> particleVertexShaderBlob = CompileShader(L"resources/shaders/Particle.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 
 	assert(particleVertexShaderBlob != nullptr);
 
 	// Particle用PixelShaderのコンパイル
-	Microsoft::WRL::ComPtr<IDxcBlob> particlePixelShaderBlob = CompileShader(L"Particle.PS.hlsl", L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
+	Microsoft::WRL::ComPtr<IDxcBlob> particlePixelShaderBlob = CompileShader(L"resources/shaders/Particle.PS.hlsl", L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 
 	assert(particlePixelShaderBlob != nullptr);
 
