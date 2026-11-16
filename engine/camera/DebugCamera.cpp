@@ -1,5 +1,5 @@
 #include "DebugCamera.h"
-#include "Input.h"
+#include "engine/input/Input.h"
 
 
 DebugCamera::DebugCamera(const Vector3 &translation, const Vector3 &rotation) {

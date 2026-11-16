@@ -1,7 +1,7 @@
 #include "DirectXCore.h"
-#include "Logger.h"
-#include "StringUtility.h"
-#include "Window.h"
+#include "engine/utility/Logger.h"
+#include "engine/utility/StringUtility.h"
+#include "engine/platform/Window.h"
 #include <cassert>
 #include <format>
 #include <stdexcept>
