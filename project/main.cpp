@@ -1030,7 +1030,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	const auto &commandQueue = directXCore->GetCommandQueue();
 	const auto &commandAllocator = directXCore->GetCommandAllocator();
 	const auto &commandList = directXCore->GetCommandList();
-	const auto &swapChain = directXCore->GetSwapChain();
 
 	const auto &srvDescriptorHeap = directXCore->GetSrvDescriptorHeap();
 
