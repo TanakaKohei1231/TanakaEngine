@@ -1,0 +1,28 @@
+name: DevelopmentBuild
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  SOLUTION_FILE_PATH: project/TanakaEngine.slnx
+  CONFIGURATION: Development
+
+jobs:
+  build:
+    runs-on: windows-2025-vs2026
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
+
+      - name: Build
+        shell: pwsh
+        run: msbuild "$env:SOLUTION_FILE_PATH" "/p:Platform=x64" "/p:Configuration=$env:CONFIGURATION"
