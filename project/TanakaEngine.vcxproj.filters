@@ -1,0 +1,179 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="engine">
+      <UniqueIdentifier>{d4604752-d195-5d92-a9fe-61c143694e8e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\camera">
+      <UniqueIdentifier>{563e0360-7f5e-5552-8257-cc0137301cec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\debug">
+      <UniqueIdentifier>{c3231838-d74f-5ba3-84ab-9ba7c831b2c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\graphics">
+      <UniqueIdentifier>{be4fc88f-d330-515f-8a48-5ab445a1b60f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\input">
+      <UniqueIdentifier>{2818ea71-7116-585a-a08c-7ac456e733d3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\math">
+      <UniqueIdentifier>{0777d41d-4bbf-5efd-9cdb-d99de332e83e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\platform">
+      <UniqueIdentifier>{a4c17250-9b3a-5b9c-a546-aec5f0d9e814}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="engine\utility">
+      <UniqueIdentifier>{124e971a-5be5-5993-96e0-33c13dbe98ff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals">
+      <UniqueIdentifier>{a068b144-cf4e-5cf0-bea8-7ee083acb8b2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\imgui">
+      <UniqueIdentifier>{a12cbd0b-19ea-473f-8976-64ad5493a264}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources">
+      <UniqueIdentifier>{3080caa8-9b99-5806-9cbc-e5c6c5d16467}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources\shaders">
+      <UniqueIdentifier>{e3cfb82e-a454-5f5b-ae33-e45a1cc67e83}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      </ClCompile>
+    <ClCompile Include="engine\math\Vector3.cpp">
+      <Filter>engine\math</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\math\Matrix4x4.cpp">
+      <Filter>engine\math</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui_demo.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui_draw.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui_impl_dx12.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui_impl_win32.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui_tables.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui_widgets.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\math\Vector2.cpp">
+      <Filter>engine\math</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\camera\DebugCamera.cpp">
+      <Filter>engine\camera</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\input\Input.cpp">
+      <Filter>engine\input</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\platform\Window.cpp">
+      <Filter>engine\platform</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\graphics\DirectXCore.cpp">
+      <Filter>engine\graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\utility\Logger.cpp">
+      <Filter>engine\utility</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\utility\StringUtility.cpp">
+      <Filter>engine\utility</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\debug\DirectXResourceLeakChecker.cpp">
+      <Filter>engine\debug</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="resources\shaders\Object3d.VS.hlsl">
+      <Filter>resources\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\Object3d.PS.hlsl">
+      <Filter>resources\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\Particle.PS.hlsl">
+      <Filter>resources\shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="resources\shaders\Particle.VS.hlsl">
+      <Filter>resources\shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="engine\math\Vector3.h">
+      <Filter>engine\math</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\math\Matrix4x4.h">
+      <Filter>engine\math</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imconfig.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imgui.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imgui_impl_dx12.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imgui_impl_win32.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imgui_internal.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imstb_rectpack.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imstb_textedit.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imstb_truetype.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\math\Vector2.h">
+      <Filter>engine\math</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\camera\DebugCamera.h">
+      <Filter>engine\camera</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\input\Input.h">
+      <Filter>engine\input</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\platform\Window.h">
+      <Filter>engine\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\graphics\DirectXCore.h">
+      <Filter>engine\graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\utility\Logger.h">
+      <Filter>engine\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\utility\StringUtility.h">
+      <Filter>engine\utility</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\debug\DirectXResourceLeakChecker.h">
+      <Filter>engine\debug</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="externals\imgui\LICENSE.txt">
+      <Filter>externals\imgui</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="resources\shaders\Object3d.hlsli">
+      <Filter>resources\shaders</Filter>
+    </None>
+    <None Include="resources\shaders\Particle.hlsli">
+      <Filter>resources\shaders</Filter>
+    </None>
+  </ItemGroup>
+</Project>

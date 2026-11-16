@@ -364,3 +364,6 @@ Dumps/
 imgui.ini
 
 !resources/**/*.obj
+
+# 出力ファイルを除外する
+generated/
