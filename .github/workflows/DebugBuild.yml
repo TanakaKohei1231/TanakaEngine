@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  SOLUTION_FILE_PATH: TanakaEngine.sln
+  SOLUTION_FILE_PATH: 	project/TanakaEngine.slnx
   CONFIGURATION: Debug
 
 jobs:
