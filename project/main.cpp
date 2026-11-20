@@ -23,7 +23,7 @@
 #include <cstring>
 #include <wrl.h>
 #include <xaudio2.h>
-#define DIRECTINPUT_VERSION 0x0800 // DirectInputã®ãƒãƒ¼ã‚¸ãƒ§ãƒ³æŒ‡å®š
+#define DIRECTINPUT_VERSION 0x0800 // DirectInput‚Ìƒo[ƒWƒ‡ƒ“w’è
 #include <dinput.h>
 #include <Xinput.h>
 #include <unordered_map>
@@ -34,6 +34,9 @@
 #include "engine/utility/StringUtility.h"
 #include "engine/graphics/DirectXCore.h"
 #include "engine/debug/DirectXResourceLeakChecker.h"
+#include "ParticleSystem.h"
+#include "Vector4.h"
+#include "ParticleEmitter.h"
 
 
 
@@ -72,7 +75,7 @@ enum ModelType {
 };
 
 
-// ãƒ–ãƒ¬ãƒ³ãƒ‰ãƒ¢ãƒ¼ãƒ‰
+// ƒuƒŒƒ“ƒhƒ‚[ƒh
 enum BlendMode {
 	BLEND_MODE_NONE,
 	BLEND_MODE_NORMAL,
@@ -82,10 +85,6 @@ enum BlendMode {
 	BLEND_MODE_SCREEN,
 
 	BLEND_MODE_COUNT,
-};
-
-struct Vector4 {
-	float x, y, z, w;
 };
 
 struct VertexData {
@@ -99,11 +98,6 @@ struct Material {
 	int32_t lightingType;
 	float padding[3];
 	Matrix4x4 uvTransform;
-};
-
-struct TransformationMatrix {
-	Matrix4x4 WVP;
-	Matrix4x4 World;
 };
 
 struct DirectionalLight {
@@ -128,31 +122,31 @@ struct ModelData {
 	std::vector<MaterialData> materials;
 };
 
-// ãƒãƒ£ãƒ³ã‚¯ãƒ˜ãƒƒãƒ€
+// ƒ`ƒƒƒ“ƒNƒwƒbƒ_
 struct ChunkHeader {
-	char id[4];   // ãƒãƒ£ãƒ³ã‚¯æ¯ã®ID
-	int32_t size; // ãƒãƒ£ãƒ³ã‚¯ã‚µã‚¤ã‚º
+	char id[4];   // ƒ`ƒƒƒ“ƒN–ˆ‚ÌID
+	int32_t size; // ƒ`ƒƒƒ“ƒNƒTƒCƒY
 };
 
-// RIFFãƒ˜ãƒƒãƒ€ãƒãƒ£ãƒ³ã‚¯
+// RIFFƒwƒbƒ_ƒ`ƒƒƒ“ƒN
 struct RiffHeader {
 	ChunkHeader chunk; // "RIFF"
 	char type[4];      // "WAVE"
 };
 
-// FMTãƒãƒ£ãƒ³ã‚¯
+// FMTƒ`ƒƒƒ“ƒN
 struct FormatChunk {
 	ChunkHeader chunk; // "fmt "
-	WAVEFORMATEX fmt;  // æ³¢å½¢ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆ
+	WAVEFORMATEX fmt;  // ”gŒ`ƒtƒH[ƒ}ƒbƒg
 };
 
-// éŸ³å£°ãƒ‡ãƒ¼ã‚¿
+// ‰¹ºƒf[ƒ^
 struct SoundData {
-	// æ³¢å½¢ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆ
+	// ”gŒ`ƒtƒH[ƒ}ƒbƒg
 	WAVEFORMATEX wfex;
-	// ãƒãƒƒãƒ•ã‚¡ã®å…ˆé ­ã‚¢ãƒ‰ãƒ¬ã‚¹
+	// ƒoƒbƒtƒ@‚Ìæ“ªƒAƒhƒŒƒX
 	BYTE *pBuffer;
-	// ãƒãƒƒãƒ•ã‚¡ã®ã‚µã‚¤ã‚º
+	// ƒoƒbƒtƒ@‚ÌƒTƒCƒY
 	unsigned int bufferSize;
 };
 
@@ -174,14 +168,14 @@ struct ModelResource {
 	std::string name;
 	ModelData modelData;
 	std::vector<MeshResource> meshes;
-	std::vector<ModelMaterialResource> materials;  // ãƒ¢ãƒ‡ãƒ«ãŒæŒã¤ãƒãƒ†ãƒªã‚¢ãƒ«ä¸€è¦§
+	std::vector<ModelMaterialResource> materials;  // ƒ‚ƒfƒ‹‚ª‚Âƒ}ƒeƒŠƒAƒ‹ˆê——
 };
 
 struct Object3DInstance {
 	int32_t modelIndex;
 	Transform transform;
 
-	Transform uvTransform;  // Objectã”ã¨ã®UVTransform
+	Transform uvTransform;  // Object‚²‚Æ‚ÌUVTransform
 	Vector4 color;
 	int32_t lightingType;
 	int32_t blendMode = BLEND_MODE_NORMAL;
@@ -193,39 +187,43 @@ struct Object3DInstance {
 	TransformationMatrix *wvpData;
 };
 
-struct Particle {
-	Transform transform;
-	Vector3 velocty;
+struct EmitterInstance {
+	// Emitter–{‘Ì
+	ParticleEmitter emitter;
+
+	// ƒƒCƒ„[ƒtƒŒ[ƒ€—pWVP
+	Microsoft::WRL::ComPtr<ID3D12Resource> wvpResource;
+	TransformationMatrix *wvpData = nullptr;
 };
 
-// ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ä½œæˆé–¢æ•°
+// ƒƒOƒtƒ@ƒCƒ‹ì¬ŠÖ”
 std::ofstream CreateLogFile() {
-	// ãƒ­ã‚°ã®ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’ç”¨æ„
+	// ƒƒO‚ÌƒfƒBƒŒƒNƒgƒŠ‚ğ—pˆÓ
 	std::filesystem::create_directory("logs");
 
-	// ç¾åœ¨æ™‚åˆ»ã®å–å¾—(UTCæ™‚åˆ»)
+	// Œ»İ‚Ìæ“¾(UTC)
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 
-	// ã‚³ãƒ³ãƒç§’ã‚’å‰Šã‚‹
+	// ƒRƒ“ƒ}•b‚ğí‚é
 	std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds> nowSeconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
 
-	// æ—¥æœ¬æ™‚é–“ã«å¤‰æ›
+	// “ú–{ŠÔ‚É•ÏŠ·
 	std::chrono::zoned_time localTime{std::chrono::current_zone(), nowSeconds};
 
-	// formatã‚’ä½¿ã£ã¦å¹´æœˆæ—¥_æ™‚åˆ†ç§’ã®æ–‡å­—åˆ—ã«å¤‰æ›
+	// format‚ğg‚Á‚Ä”NŒ“ú_•ª•b‚Ì•¶š—ñ‚É•ÏŠ·
 	std::string dateString = std::format("{:%Y%m%d_%H%M%S}", localTime);
 
-	// æ™‚åˆ»ã‚’ä½¿ã£ã¦ãƒ•ã‚¡ã‚¤ãƒ«åã‚’æ±ºå®š
+	// ‚ğg‚Á‚Äƒtƒ@ƒCƒ‹–¼‚ğŒˆ’è
 	std::string logFilePath = std::string("logs/") + dateString + ".log";
 
-	// ãƒ•ã‚¡ã‚¤ãƒ«ã‚’ä½œã£ã¦æ›¸ãè¾¼ã¿æº–å‚™
+	// ƒtƒ@ƒCƒ‹‚ğì‚Á‚Ä‘‚«‚İ€”õ
 	std::ofstream logStream(logFilePath);
 
 	return logStream;
 }
 
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception){
-	// æ™‚åˆ»ã‚’å–å¾—ã—ã¦ã€æ™‚åˆ»ã‚’åå‰ã«å…¥ã‚ŒãŸãƒ•ã‚¡ã‚¤ãƒ«ã‚’ä½œæˆã€‚Dumpsãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªä»¥ä¸‹ã«å‡ºåŠ›
+	// ‚ğæ“¾‚µ‚ÄA‚ğ–¼‘O‚É“ü‚ê‚½ƒtƒ@ƒCƒ‹‚ğì¬BDumpsƒfƒBƒŒƒNƒgƒŠˆÈ‰º‚Éo—Í
 	SYSTEMTIME time;
 	GetLocalTime(&time);
 	wchar_t filePath[MAX_PATH] = {0};
@@ -234,20 +232,20 @@ static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception){
 
 	HANDLE dumpFileHandle = CreateFile(filePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
-	// processIDã¨ã‚¯ãƒ©ãƒƒã‚·ãƒ¥ã®ç™ºç”Ÿã—ãŸthreadIDã‚’å–å¾—
+	// processID‚ÆƒNƒ‰ƒbƒVƒ…‚Ì”­¶‚µ‚½threadID‚ğæ“¾
 	DWORD processId = GetCurrentProcessId();
 	DWORD threadId = GetCurrentThreadId();
 
-	// è¨­å®šæƒ…å ±ã‚’å…¥åŠ›
+	// İ’èî•ñ‚ğ“ü—Í
 	MINIDUMP_EXCEPTION_INFORMATION minidumpInformation{0};
 	minidumpInformation.ThreadId = threadId;
 	minidumpInformation.ExceptionPointers = exception;
 	minidumpInformation.ClientPointers = TRUE;
 
-	// Dumpã®å‡ºåŠ›ã€‚minidumpNormalã¯å¿…è¦æœ€ä½é™ã®æƒ…å ±ã‚’å‡ºåŠ›ã™ã‚‹ãƒ•ãƒ©ã‚°
+	// Dump‚Ìo—ÍBminidumpNormal‚Í•K—vÅ’áŒÀ‚Ìî•ñ‚ğo—Í‚·‚éƒtƒ‰ƒO
 	MiniDumpWriteDump(GetCurrentProcess(), processId, dumpFileHandle, MiniDumpNormal, &minidumpInformation, nullptr, nullptr);
 
-	// ä»–ã«é–¢é€£ä»˜ã‘ã‚‰ã‚Œã¦ã„ã‚‹SEHä¾‹å¤–ãƒãƒ³ãƒ‰ãƒ©ãŒã‚ã‚Œã°å®Ÿè¡Œã€‚é€šå¸¸ã¯ãƒ—ãƒ­ã‚»ã‚¹ã‚’çµ‚äº†ã™ã‚‹
+	// ‘¼‚ÉŠÖ˜A•t‚¯‚ç‚ê‚Ä‚¢‚éSEH—áŠOƒnƒ“ƒhƒ‰‚ª‚ ‚ê‚ÎÀsB’Êí‚ÍƒvƒƒZƒX‚ğI—¹‚·‚é
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 
@@ -260,33 +258,33 @@ Microsoft::WRL::ComPtr<IDxcBlob> CompileShader(
 	IDxcIncludeHandler *includeHandler,
 	std::ostream &log
 ) {
-	// ã“ã‚Œã‹ã‚‰ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ã™ã‚‹æ—¨ã‚’ãƒ­ã‚°ã«å‡ºã™
+	// ‚±‚ê‚©‚çƒVƒF[ƒ_[‚ğƒRƒ“ƒpƒCƒ‹‚·‚é|‚ğƒƒO‚Éo‚·
 	Log(log,ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile)));
 
-	// hlslãƒ•ã‚¡ã‚¤ãƒ«ã‚’èª­ã‚€
+	// hlslƒtƒ@ƒCƒ‹‚ğ“Ç‚Ş
 	Microsoft::WRL::ComPtr<IDxcBlobEncoding> shaderSource;
 	HRESULT hr = dxcUtils->LoadFile(filePath.c_str(), nullptr, shaderSource.GetAddressOf());
 
-	// èª­ã‚ãªã‹ã£ãŸã‚‰æ­¢ã‚ã‚‹
+	// “Ç‚ß‚È‚©‚Á‚½‚ç~‚ß‚é
 	assert(SUCCEEDED(hr));
 
-	// èª­ã¿è¾¼ã‚“ã ãƒ•ã‚¡ã‚¤ãƒ«ã®å†…å®¹ã‚’è¨­å®šã™ã‚‹
+	// “Ç‚İ‚ñ‚¾ƒtƒ@ƒCƒ‹‚Ì“à—e‚ğİ’è‚·‚é
 	DxcBuffer shaderSourceBuffer;
 	shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();
 	shaderSourceBuffer.Size = shaderSource->GetBufferSize();
-	shaderSourceBuffer.Encoding = DXC_CP_UTF8; // UTF-8ã§ã‚ã‚‹ã“ã¨ã‚’ä¼ãˆã‚‹
+	shaderSourceBuffer.Encoding = DXC_CP_UTF8; // UTF-8‚Å‚ ‚é‚±‚Æ‚ğ“`‚¦‚é
 
 	
 	LPCWSTR arguments[] = {
-		filePath.c_str(),          // ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«å¯¾è±¡ã®hlslãƒ•ã‚¡ã‚¤ãƒ«å
-		L"-E", L"main",            // ã‚¨ãƒ³ãƒˆãƒªãƒ¼ãƒã‚¤ãƒ³ãƒˆã®æŒ‡å®šã€‚åŸºæœ¬çš„ã«mainä»¥å¤–ã«ã¯ã—ãªã„
-		L"-T", profile,            // shaderProfileã®è¨­å®š
-		L"-Zi", L"-Qembed_debug",  // ãƒ‡ãƒãƒƒã‚°ç”¨ã®æƒ…å ±ã‚’åŸ‹ã‚è¾¼ã‚€
-		L"-Od",                    // æœ€é©åŒ–ã‚’å¤–ã—ã¦ãŠã
-		L"-Zpr",                   // ãƒ¡ãƒ¢ãƒªãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆã¯è¡Œå„ªå…ˆ
+		filePath.c_str(),          // ƒRƒ“ƒpƒCƒ‹‘ÎÛ‚Ìhlslƒtƒ@ƒCƒ‹–¼
+		L"-E", L"main",            // ƒGƒ“ƒgƒŠ[ƒ|ƒCƒ“ƒg‚Ìw’èBŠî–{“I‚ÉmainˆÈŠO‚É‚Í‚µ‚È‚¢
+		L"-T", profile,            // shaderProfile‚Ìİ’è
+		L"-Zi", L"-Qembed_debug",  // ƒfƒoƒbƒO—p‚Ìî•ñ‚ğ–„‚ß‚Ş
+		L"-Od",                    // Å“K‰»‚ğŠO‚µ‚Ä‚¨‚­
+		L"-Zpr",                   // ƒƒ‚ƒŠƒŒƒCƒAƒEƒg‚Ís—Dæ
 	};
 
-	// å®Ÿéš›ã«shaderã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ã™ã‚‹
+	// ÀÛ‚Éshader‚ğƒRƒ“ƒpƒCƒ‹‚·‚é
 	Microsoft::WRL::ComPtr<IDxcResult> shaderResult;
 	hr = dxcCompiler->Compile(
 		&shaderSourceBuffer,
@@ -298,7 +296,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> CompileShader(
 
 	assert(SUCCEEDED(hr));
 
-	// è­¦å‘Šã€ã‚¨ãƒ©ãƒ¼ãŒã§ãŸã‚‰ãƒ­ã‚°ã«å‡ºã—ã¦æ­¢ã‚ã‚‹
+	// ŒxAƒGƒ‰[‚ª‚Å‚½‚çƒƒO‚Éo‚µ‚Ä~‚ß‚é
 	Microsoft::WRL::ComPtr<IDxcBlobUtf8> shaderError;
 	shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(shaderError.GetAddressOf()), nullptr);
 
@@ -307,15 +305,15 @@ Microsoft::WRL::ComPtr<IDxcBlob> CompileShader(
 		assert(false);
 	}
 
-	// ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«çµæœã‹ã‚‰å®Ÿè¡Œç”¨ã®ãƒã‚¤ãƒŠãƒªéƒ¨åˆ†ã‚’å–å¾—
+	// ƒRƒ“ƒpƒCƒ‹Œ‹‰Ê‚©‚çÀs—p‚ÌƒoƒCƒiƒŠ•”•ª‚ğæ“¾
 	Microsoft::WRL::ComPtr<IDxcBlob> shaderBlob;
 	hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(shaderBlob.GetAddressOf()), nullptr);
 	assert(SUCCEEDED(hr));
 
-	// æˆåŠŸã®ãƒ­ã‚°ã‚’å‡ºã™
+	// ¬Œ÷‚ÌƒƒO‚ğo‚·
 	Log(log, ConvertString(std::format(L"Compile Succeeded, path:{}, profile:{}\n", filePath, profile)));
 
-	// å®Ÿè¡Œç”¨ã®ãƒã‚¤ãƒŠãƒªã‚’è¿”å´
+	// Às—p‚ÌƒoƒCƒiƒŠ‚ğ•Ô‹p
 	return shaderBlob;
 }
 
@@ -324,34 +322,34 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(const Microsoft::WRL
 
 	assert(device != nullptr);
 
-	// é ‚ç‚¹ãƒªã‚½ãƒ¼ã‚¹ç”¨ã®ãƒ’ãƒ¼ãƒ—ã®è¨­å®š
+	// ’¸“_ƒŠƒ\[ƒX—p‚Ìƒq[ƒv‚Ìİ’è
 	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
 	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
 
-	// ãƒªã‚½ãƒ¼ã‚¹ã®è¨­å®š
+	// ƒŠƒ\[ƒX‚Ìİ’è
 	D3D12_RESOURCE_DESC resourceDesc{};
 
-	// ãƒãƒƒãƒ•ã‚¡ãƒªã‚½ãƒ¼ã‚¹ã§ã‚ã‚‹ã“ã¨ã‚’ç¤ºã™
+	// ƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Å‚ ‚é‚±‚Æ‚ğ¦‚·
 	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 
-	// ãƒªã‚½ãƒ¼ã‚¹ã®ã‚µã‚¤ã‚º
+	// ƒŠƒ\[ƒX‚ÌƒTƒCƒY
 	resourceDesc.Width = sizeInBytes;
 
-	// ãƒãƒƒãƒ•ã‚¡ã®å ´åˆã¯ã“ã‚Œã§å›ºå®š
+	// ƒoƒbƒtƒ@‚Ìê‡‚Í‚±‚ê‚ÅŒÅ’è
 	resourceDesc.Height = 1;
 	resourceDesc.DepthOrArraySize = 1;
 	resourceDesc.MipLevels = 1;
 	resourceDesc.SampleDesc.Count = 1;
 	resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
-	// å®Ÿéš›ã«ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// ÀÛ‚ÉƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 
 	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(resource.GetAddressOf()));
 
 	assert(SUCCEEDED(hr));
 
-	// ãƒªãƒªãƒ¼ã‚¹ãƒ“ãƒ«ãƒ‰ã§ã¯assertãŒé€šã‚‰ãªã„ã®ã§hrã®å€¤ã‚’ä½¿ã‚ãªã„ãŸã‚ã€è­¦å‘ŠãŒå‡ºãªã„ã‚ˆã†ã«ã™ã‚‹
+	// ƒŠƒŠ[ƒXƒrƒ‹ƒh‚Å‚Íassert‚ª’Ê‚ç‚È‚¢‚Ì‚Åhr‚Ì’l‚ğg‚í‚È‚¢‚½‚ßAŒx‚ªo‚È‚¢‚æ‚¤‚É‚·‚é
 	(void)hr;
 
 	return resource;
@@ -376,7 +374,7 @@ MeshResource CreateMeshResource(const Microsoft::WRL::ComPtr<ID3D12Device> &devi
 	HRESULT hr = meshResource.vertexResource->Map(0, nullptr, reinterpret_cast<void **>(&vertexData));
 	assert(SUCCEEDED(hr));
 
-	// ãƒªãƒªãƒ¼ã‚¹ãƒ“ãƒ«ãƒ‰ã§ã¯assertãŒé€šã‚‰ãªã„ã®ã§hrã®å€¤ã‚’ä½¿ã‚ãªã„ãŸã‚ã€è­¦å‘ŠãŒå‡ºãªã„ã‚ˆã†ã«ã™ã‚‹
+	// ƒŠƒŠ[ƒXƒrƒ‹ƒh‚Å‚Íassert‚ª’Ê‚ç‚È‚¢‚Ì‚Åhr‚Ì’l‚ğg‚í‚È‚¢‚½‚ßAŒx‚ªo‚È‚¢‚æ‚¤‚É‚·‚é
 	(void)hr;
 
 	std::memcpy(vertexData, meshResource.vertices.data(), sizeof(VertexData) * meshResource.vertices.size());
@@ -407,7 +405,7 @@ ModelResource CreateModelResource(
 
 
 DirectX::ScratchImage LoadTexture(const std::string &filePath) {
-	// ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ•ã‚¡ã‚¤ãƒ«ã‚’èª­ã‚“ã§ãƒ—ãƒ­ã‚°ãƒ©ãƒ ã§æ‰±ãˆã‚‹ã‚ˆã†ã«ã™ã‚‹
+	// ƒeƒNƒXƒ`ƒƒƒtƒ@ƒCƒ‹‚ğ“Ç‚ñ‚ÅƒvƒƒOƒ‰ƒ€‚Åˆµ‚¦‚é‚æ‚¤‚É‚·‚é
 	DirectX::ScratchImage image{};
 	std::wstring filePathW = ConvertString(filePath);
 
@@ -416,18 +414,18 @@ DirectX::ScratchImage LoadTexture(const std::string &filePath) {
 
 	const DirectX::TexMetadata &metadata = image.GetMetadata();
 
-	// 1x1ã®Textureã¯ã“ã‚Œä»¥ä¸Šå°ã•ã„mipmapã‚’ä½œã‚Œãªã„ãŸã‚ã€ãã®ã¾ã¾è¿”ã™
+	// 1x1‚ÌTexture‚Í‚±‚êˆÈã¬‚³‚¢mipmap‚ğì‚ê‚È‚¢‚½‚ßA‚»‚Ì‚Ü‚Ü•Ô‚·
 	if (metadata.width == 1 && metadata.height == 1) {
 		return image;
 	}
 
-	// ãƒŸãƒ‹ãƒãƒƒãƒ—ã®ä½œæˆ
+	// ƒ~ƒjƒ}ƒbƒv‚Ìì¬
 	DirectX::ScratchImage mipImages{};
 	hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_SRGB, 0, mipImages);
 
 	assert(SUCCEEDED(hr));
 
-	// ãƒŸãƒ‹ãƒãƒƒãƒ—ä»˜ãã®ãƒ‡ãƒ¼ã‚¿ã‚’è¿”ã™
+	// ƒ~ƒjƒ}ƒbƒv•t‚«‚Ìƒf[ƒ^‚ğ•Ô‚·
 	return mipImages;
 }
 
@@ -435,34 +433,34 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateTextureResource(
 	const Microsoft::WRL::ComPtr<ID3D12Device> &device,
 	const DirectX::TexMetadata &metadata
 ) {
-	// metadataã‚’åŸºã«Resourceã®è¨­å®š
+	// metadata‚ğŠî‚ÉResource‚Ìİ’è
 	D3D12_RESOURCE_DESC resourceDesc{};
-	resourceDesc.Width = UINT(metadata.width);                             // Textureã®å¹…
-	resourceDesc.Height = UINT(metadata.height);                           // Textureã®é«˜ã•
-	resourceDesc.MipLevels = UINT16(metadata.mipLevels);                   // mipmapã®æ•°
-	resourceDesc.DepthOrArraySize = UINT16(metadata.arraySize);            // å¥¥è¡Œã or é…åˆ—Textureã®é…åˆ—æ•°
-	resourceDesc.Format = metadata.format;                                 // Textureã®Format
-	resourceDesc.SampleDesc.Count = 1;                                     // ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã‚«ã‚¦ãƒ³ãƒˆã€‚1å›ºå®šã€‚
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION(metadata.dimension); // Textureã®æ¬¡å…ƒæ•°ã€‚æ™®æ®µä½¿ã£ã¦ã„ã‚‹ã®ã¯2æ¬¡å…ƒ
+	resourceDesc.Width = UINT(metadata.width);                             // Texture‚Ì•
+	resourceDesc.Height = UINT(metadata.height);                           // Texture‚Ì‚‚³
+	resourceDesc.MipLevels = UINT16(metadata.mipLevels);                   // mipmap‚Ì”
+	resourceDesc.DepthOrArraySize = UINT16(metadata.arraySize);            // ‰œs‚« or ”z—ñTexture‚Ì”z—ñ”
+	resourceDesc.Format = metadata.format;                                 // Texture‚ÌFormat
+	resourceDesc.SampleDesc.Count = 1;                                     // ƒTƒ“ƒvƒŠƒ“ƒOƒJƒEƒ“ƒgB1ŒÅ’èB
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION(metadata.dimension); // Texture‚ÌŸŒ³”B•’ig‚Á‚Ä‚¢‚é‚Ì‚Í2ŸŒ³
 
-	// åˆ©ç”¨ã™ã‚‹Heapã®è¨­å®š
+	// —˜—p‚·‚éHeap‚Ìİ’è
 	D3D12_HEAP_PROPERTIES heapProperties{};
-	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT; // VRAMä¸Šã«ä½œæˆã™ã‚‹
+	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT; // VRAMã‚Éì¬‚·‚é
 
-	// Resourceã®ç”Ÿæˆ
+	// Resource‚Ì¶¬
 	Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 	HRESULT hr = device->CreateCommittedResource(
-		&heapProperties,                // Heapã®è¨­å®š
-		D3D12_HEAP_FLAG_NONE,           // Heapã®ç‰¹æ®Šãªè¨­å®šã€‚ç‰¹ã«ãªã—ã€‚
-		&resourceDesc,                  // Resourceã®è¨­å®š
-		D3D12_RESOURCE_STATE_COPY_DEST, // ãƒ‡ãƒ¼ã‚¿è»¢é€ã•ã‚Œã‚‹è¨­å®š
-		nullptr,                        // Clearæœ€é©å€¤ã€‚ä½¿ã‚ãªã„ã®ã§nullptr
+		&heapProperties,                // Heap‚Ìİ’è
+		D3D12_HEAP_FLAG_NONE,           // Heap‚Ì“Áê‚Èİ’èB“Á‚É‚È‚µB
+		&resourceDesc,                  // Resource‚Ìİ’è
+		D3D12_RESOURCE_STATE_COPY_DEST, // ƒf[ƒ^“]‘—‚³‚ê‚éİ’è
+		nullptr,                        // ClearÅ“K’lBg‚í‚È‚¢‚Ì‚Ånullptr
 		IID_PPV_ARGS(resource.GetAddressOf())
 	);
 
 	assert(SUCCEEDED(hr));
 
-	// ãƒªãƒªãƒ¼ã‚¹ãƒ“ãƒ«ãƒ‰ã§ã¯assertãŒé€šã‚‰ãªã„ã®ã§hrã®å€¤ã‚’ä½¿ã‚ãªã„ãŸã‚ã€è­¦å‘ŠãŒå‡ºãªã„ã‚ˆã†ã«ã™ã‚‹
+	// ƒŠƒŠ[ƒXƒrƒ‹ƒh‚Å‚Íassert‚ª’Ê‚ç‚È‚¢‚Ì‚Åhr‚Ì’l‚ğg‚í‚È‚¢‚½‚ßAŒx‚ªo‚È‚¢‚æ‚¤‚É‚·‚é
 	(void)hr;
 
 	return resource;
@@ -498,7 +496,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> UploadTextureData(
 		subresources.data()
 	);
 
-	// Textureã¸ã®è»¢é€å¾Œã¯åˆ©ç”¨ã§ãã‚‹ã‚ˆã†ã€D3D12_RESOURCE_STATE_COPY_DESTã‹ã‚‰D3D12_RESOURCE_STATE_GENERIC_READã¸ResourceStateã‚’å¤‰æ›´ã™ã‚‹
+	// Texture‚Ö‚Ì“]‘—Œã‚Í—˜—p‚Å‚«‚é‚æ‚¤AD3D12_RESOURCE_STATE_COPY_DEST‚©‚çD3D12_RESOURCE_STATE_GENERIC_READ‚ÖResourceState‚ğ•ÏX‚·‚é
 	D3D12_RESOURCE_BARRIER barrier{};
 	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
@@ -571,10 +569,10 @@ std::vector<MaterialData> LoadMaterialTemplateFile(const std::string &directoryP
 }
 
 ModelData LoadObjFile(const std::string &directoryPath, const std::string &filename) {
-	ModelData modelData;            // æ§‹ç¯‰ã™ã‚‹ModelData
-	std::vector<Vector4> positions; // ä½ç½®
-	std::vector<Vector3> normals;   // æ³•ç·š
-	std::vector<Vector2> texcoords; // ãƒ†ã‚¯ã‚¹ãƒãƒ£åº§æ¨™
+	ModelData modelData;            // \’z‚·‚éModelData
+	std::vector<Vector4> positions; // ˆÊ’u
+	std::vector<Vector3> normals;   // –@ü
+	std::vector<Vector2> texcoords; // ƒeƒNƒXƒ`ƒƒÀ•W
 	std::unordered_map<std::string, uint32_t> materialIndexMap;
 
 	std::string line;
@@ -679,7 +677,7 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 
 				Vector4 position = positions[elementIndices[0] - 1];
 
-				// UVãŒç„¡ã„OBJã‚‚ã‚ã‚‹ãŸã‚ã€ç„¡ã„å ´åˆã¯(0, 0)ã‚’å…¥ã‚Œã‚‹
+				// UV‚ª–³‚¢OBJ‚à‚ ‚é‚½‚ßA–³‚¢ê‡‚Í(0, 0)‚ğ“ü‚ê‚é
 				Vector2 texcoord = {0.0f, 0.0f};
 
 				if (elementIndices[1] != 0) {
@@ -690,7 +688,7 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 					texcoord.y = 1.0f - texcoord.y;
 				}
 
-				// æ³•ç·šãŒç„¡ã„å ´åˆã®ä¿é™º
+				// –@ü‚ª–³‚¢ê‡‚Ì•ÛŒ¯
 				Vector3 normal = {0.0f, 0.0f, 1.0f};
 
 				if (elementIndices[2] != 0) {
@@ -705,7 +703,7 @@ ModelData LoadObjFile(const std::string &directoryPath, const std::string &filen
 				faceVertices.push_back({position, texcoord, normal});
 			}
 
-			// ä¸‰è§’å½¢ä»¥å¤–ã®é¢ã‚‚ä¸‰è§’å½¢ã«åˆ†å‰²ã—ã¦ç™»éŒ²ã™ã‚‹
+			// OŠpŒ`ˆÈŠO‚Ì–Ê‚àOŠpŒ`‚É•ªŠ„‚µ‚Ä“o˜^‚·‚é
 			for (uint32_t vertexIndex = 1; vertexIndex + 1 < faceVertices.size(); ++vertexIndex) {
 				currentMesh.vertices.push_back(faceVertices[0]);
 				currentMesh.vertices.push_back(faceVertices[vertexIndex]);
@@ -780,12 +778,12 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 			Vector3 normal2 = Vector3::Normalize(position2);
 			Vector3 normal3 = Vector3::Normalize(position3);
 
-			// 1æšç›®ã®ä¸‰è§’å½¢
+			// 1–‡–Ú‚ÌOŠpŒ`
 			sphereMesh.vertices.push_back({{position0.x, position0.y, position0.z, 1.0f}, texcoord0, normal0});
 			sphereMesh.vertices.push_back({{position2.x, position2.y, position2.z, 1.0f}, texcoord2, normal2});
 			sphereMesh.vertices.push_back({{position1.x, position1.y, position1.z, 1.0f}, texcoord1, normal1});
 
-			// 2æšç›®ã®ä¸‰è§’å½¢
+			// 2–‡–Ú‚ÌOŠpŒ`
 			sphereMesh.vertices.push_back({{position2.x, position2.y, position2.z, 1.0f}, texcoord2, normal2});
 			sphereMesh.vertices.push_back({{position3.x, position3.y, position3.z, 1.0f}, texcoord3, normal3});
 			sphereMesh.vertices.push_back({{position1.x, position1.y, position1.z, 1.0f}, texcoord1, normal1});
@@ -796,6 +794,39 @@ ModelData CreateSphereModelData(uint32_t subdivision, float radius) {
 	return modelData;
 }
 
+
+MeshData CreateWireBoxMeshData() {
+	MeshData mesh{};
+	mesh.name = "EmitterWireBox";
+
+	// ƒ[ƒJƒ‹À•W‚Å}1‚Ì—§•û‘Ì
+	const Vector3 corners[8] = {{-1.0f, -1.0f, -1.0f}, {1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, -1.0f}, {-1.0f, 1.0f, -1.0f},
+
+	                            {-1.0f, -1.0f, 1.0f},  {1.0f, -1.0f, 1.0f},  {1.0f, 1.0f, 1.0f},  {-1.0f, 1.0f, 1.0f}};
+
+	// 12–{‚Ì•Ó
+	const uint32_t edges[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
+	                               {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+
+	// 2’¸“_‚Å1–{‚Ìü‚ğì‚é
+	for (uint32_t i = 0; i < 12; ++i) {
+		for (uint32_t j = 0; j < 2; ++j) {
+			const Vector3 &position = corners[edges[i][j]];
+
+			VertexData vertex{};
+			vertex.position = {position.x, position.y, position.z, 1.0f};
+
+			vertex.texcoord = {0.0f, 0.0f};
+			vertex.normal = {0.0f, 0.0f, 1.0f};
+
+			mesh.vertices.push_back(vertex);
+		}
+	}
+
+	return mesh;
+}
+
+
 D3D12_BLEND_DESC CreateBlendDesc(BlendMode blendMode) {
 	D3D12_BLEND_DESC blendDesc{};
 
@@ -803,13 +834,13 @@ D3D12_BLEND_DESC CreateBlendDesc(BlendMode blendMode) {
 
 	renderTargetBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-	// ãƒ–ãƒ¬ãƒ³ãƒ‰ãªã—ã®çŠ¶æ…‹ã‚’åŸºæœ¬è¨­å®šã«ã™ã‚‹
+	// ƒuƒŒƒ“ƒh‚È‚µ‚Ìó‘Ô‚ğŠî–{İ’è‚É‚·‚é
 	renderTargetBlendDesc.BlendEnable = FALSE;
 	renderTargetBlendDesc.SrcBlend = D3D12_BLEND_ONE;
 	renderTargetBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
 	renderTargetBlendDesc.DestBlend = D3D12_BLEND_ZERO;
 
-	// ã‚¢ãƒ«ãƒ•ã‚¡å€¤
+	// ƒAƒ‹ƒtƒ@’l
 	renderTargetBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
 	renderTargetBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
 	renderTargetBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
@@ -863,52 +894,52 @@ D3D12_BLEND_DESC CreateBlendDesc(BlendMode blendMode) {
 }
 
 SoundData SoundLoadWave(const char *filename) {
-	// ãƒ•ã‚¡ã‚¤ãƒ«å…¥åŠ›ã‚¹ãƒˆãƒªãƒ¼ãƒ ã®ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹
+	// ƒtƒ@ƒCƒ‹“ü—ÍƒXƒgƒŠ[ƒ€‚ÌƒCƒ“ƒXƒ^ƒ“ƒX
 	std::ifstream file;
 
-	// .wavãƒ•ã‚¡ã‚¤ãƒ«ã‚’ãƒã‚¤ãƒŠãƒªãƒ¢ãƒ¼ãƒ‰ã§é–‹ã
+	// .wavƒtƒ@ƒCƒ‹‚ğƒoƒCƒiƒŠƒ‚[ƒh‚ÅŠJ‚­
 	file.open(filename, std::ios_base::binary);
 
-	// ãƒ•ã‚¡ã‚¤ãƒ«ã‚ªãƒ¼ãƒ—ãƒ³å¤±æ•—ã‚’æ¤œå‡ºã™ã‚‹
+	// ƒtƒ@ƒCƒ‹ƒI[ƒvƒ“¸”s‚ğŒŸo‚·‚é
 	assert(file.is_open());
 
-	// RIFFãƒ˜ãƒƒãƒ€ãƒ¼ã®èª­ã¿è¾¼ã¿
+	// RIFFƒwƒbƒ_[‚Ì“Ç‚İ‚İ
 	RiffHeader riff{};
 	file.read(reinterpret_cast<char *>(&riff), sizeof(riff));
 
-	// ãƒ•ã‚¡ã‚¤ãƒ«ãŒRIFFã‹ãƒã‚§ãƒƒã‚¯
+	// ƒtƒ@ƒCƒ‹‚ªRIFF‚©ƒ`ƒFƒbƒN
 	if (strncmp(riff.chunk.id, "RIFF", 4) != 0) {
 		assert(0);
 	}
 
-	// ã‚¿ã‚¤ãƒ—ãŒWAVEã‹ãƒã‚§ãƒƒã‚¯
+	// ƒ^ƒCƒv‚ªWAVE‚©ƒ`ƒFƒbƒN
 	if (strncmp(riff.type, "WAVE", 4) != 0) {
 		assert(0);
 	}
 
-	// Formatãƒãƒ£ãƒ³ã‚¯ã®èª­ã¿è¾¼ã¿
+	// Formatƒ`ƒƒƒ“ƒN‚Ì“Ç‚İ‚İ
 	FormatChunk format{};
 
-	// ãƒãƒ£ãƒ³ã‚¯ãƒ˜ãƒƒãƒ€ãƒ¼ã®ç¢ºèª
+	// ƒ`ƒƒƒ“ƒNƒwƒbƒ_[‚ÌŠm”F
 	file.read(reinterpret_cast<char *>(&format.chunk), sizeof(ChunkHeader));
 	if (strncmp(format.chunk.id, "fmt ", 4) != 0) {
 		assert(0);
 	}
 
-	// ãƒãƒ£ãƒ³ã‚¯æœ¬ä½“ã®èª­ã¿è¾¼ã¿
+	// ƒ`ƒƒƒ“ƒN–{‘Ì‚Ì“Ç‚İ‚İ
 	assert(format.chunk.size <= sizeof(format.fmt));
 	file.read(reinterpret_cast<char *>(&format.fmt), format.chunk.size);
 
-	// Dataãƒãƒ£ãƒ³ã‚¯ã®èª­ã¿è¾¼ã¿
+	// Dataƒ`ƒƒƒ“ƒN‚Ì“Ç‚İ‚İ
 	ChunkHeader data{};
 	file.read(reinterpret_cast<char *>(&data), sizeof(data));
 
-	// JUNKãƒãƒ£ãƒ³ã‚¯ã‚’æ¤œå‡ºã—ãŸå ´åˆ
+	// JUNKƒ`ƒƒƒ“ƒN‚ğŒŸo‚µ‚½ê‡
 	if (strncmp(data.id, "JUNK", 4) == 0) {
-		// èª­ã¿å–ã‚Šä½ç½®ã‚’JUNKãƒãƒ£ãƒ³ã‚¯ã®çµ‚ã‚ã‚Šã¾ã§é€²ã‚ã‚‹
+		// “Ç‚İæ‚èˆÊ’u‚ğJUNKƒ`ƒƒƒ“ƒN‚ÌI‚í‚è‚Ü‚Åi‚ß‚é
 		file.seekg(data.size, std::ios_base::cur);
 
-		// å†èª­ã¿è¾¼ã¿
+		// Ä“Ç‚İ‚İ
 		file.read(reinterpret_cast<char *>(&data), sizeof(data));
 	}
 
@@ -916,14 +947,14 @@ SoundData SoundLoadWave(const char *filename) {
 		assert(0);
 	}
 
-	// Dataãƒãƒ£ãƒ³ã‚¯ã®ãƒ‡ãƒ¼ã‚¿éƒ¨ï¼ˆæ³¢å½¢ãƒ‡ãƒ¼ã‚¿ï¼‰ã®èª­ã¿è¾¼ã¿
+	// Dataƒ`ƒƒƒ“ƒN‚Ìƒf[ƒ^•”i”gŒ`ƒf[ƒ^j‚Ì“Ç‚İ‚İ
 	char *pBuffer = new char[data.size];
 	file.read(pBuffer, data.size);
 
-	// Waveãƒ•ã‚¡ã‚¤ãƒ«ã‚’é–‰ã˜ã‚‹
+	// Waveƒtƒ@ƒCƒ‹‚ğ•Â‚¶‚é
 	file.close();
 
-	// returnã™ã‚‹ç‚ºã®éŸ³å£°ãƒ‡ãƒ¼ã‚¿
+	// return‚·‚éˆ×‚Ì‰¹ºƒf[ƒ^
 	SoundData soundData = {};
 
 	soundData.wfex = format.fmt;
@@ -934,9 +965,9 @@ SoundData SoundLoadWave(const char *filename) {
 }
 
 
-// éŸ³å£°ãƒ‡ãƒ¼ã‚¿è§£æ”¾
+// ‰¹ºƒf[ƒ^‰ğ•ú
 void SoundUnload(SoundData *soundData) {
-	// ãƒãƒƒãƒ•ã‚¡ã®ãƒ¡ãƒ¢ãƒªã‚’è§£æ”¾
+	// ƒoƒbƒtƒ@‚Ìƒƒ‚ƒŠ‚ğ‰ğ•ú
 	delete[] soundData->pBuffer;
 
 	soundData->pBuffer = 0;
@@ -944,22 +975,22 @@ void SoundUnload(SoundData *soundData) {
 	soundData->wfex = {};
 }
 
-// éŸ³å£°å†ç”Ÿ
+// ‰¹ºÄ¶
 void SoundPlayWave(IXAudio2 *xAudio2, const SoundData &soundData) {
 	HRESULT result;
 
-	// æ³¢å½¢ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆã‚’å…ƒã«SourceVoiceã®ç”Ÿæˆ
+	// ”gŒ`ƒtƒH[ƒ}ƒbƒg‚ğŒ³‚ÉSourceVoice‚Ì¶¬
 	IXAudio2SourceVoice *pSourceVoice = nullptr;
 	result = xAudio2->CreateSourceVoice(&pSourceVoice, &soundData.wfex);
 	assert(SUCCEEDED(result));
 
-	// å†ç”Ÿã™ã‚‹æ³¢å½¢ãƒ‡ãƒ¼ã‚¿ã®è¨­å®š
+	// Ä¶‚·‚é”gŒ`ƒf[ƒ^‚Ìİ’è
 	XAUDIO2_BUFFER buf{};
 	buf.pAudioData = soundData.pBuffer;
 	buf.AudioBytes = soundData.bufferSize;
 	buf.Flags = XAUDIO2_END_OF_STREAM;
 
-	// æ³¢å½¢ãƒ‡ãƒ¼ã‚¿ã®å†ç”Ÿ
+	// ”gŒ`ƒf[ƒ^‚ÌÄ¶
 	result = pSourceVoice->SubmitSourceBuffer(&buf);
 	assert(SUCCEEDED(result));
 
@@ -983,7 +1014,7 @@ Object3DInstance CreateObject3DInstance(
 	object.uvTransform.rotate = {0.0f, 0.0f, 0.0f};
 	object.uvTransform.translate = {0.0f, 0.0f, 0.0f};
 
-	// ãƒãƒ†ãƒªã‚¢ãƒ«ç”¨ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œæˆ
+	// ƒ}ƒeƒŠƒAƒ‹—pƒŠƒ\[ƒX‚ğì¬
 	object.materialResource = CreateBufferResource(device, sizeof(Material));
 
 	HRESULT hr = object.materialResource->Map(0, nullptr, reinterpret_cast<void **>(&object.materialData));
@@ -993,39 +1024,64 @@ Object3DInstance CreateObject3DInstance(
 	object.materialData->lightingType = object.lightingType;
 	object.materialData->uvTransform = Matrix4x4::MakeIdentity4x4();
 
-	// WVPç”¨ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œæˆ
+	// WVP—pƒŠƒ\[ƒX‚ğì¬
 	object.wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
 
 	hr = object.wvpResource->Map(0, nullptr, reinterpret_cast<void **>(&object.wvpData));
 	assert(SUCCEEDED(hr));
 
 	object.wvpData->WVP = Matrix4x4::MakeIdentity4x4();
-	object.wvpData->World = Matrix4x4::MakeIdentity4x4();
+	object.wvpData->world = Matrix4x4::MakeIdentity4x4();
 
 	return object;
 }
 
 
-// Windowsã‚¢ãƒ—ãƒªã§ã®ã‚¨ãƒ³ãƒˆãƒªãƒ¼ãƒã‚¤ãƒ³ãƒˆ(mainé–¢æ•°)
+EmitterInstance CreateEmitterInstance(const Microsoft::WRL::ComPtr<ID3D12Device> &device, const Vector3 &position) {
+	EmitterInstance instance{};
+
+	// Emitter‚Ì‰Šú‰»
+	instance.emitter.Initialize(position, 3, 0.5f);
+
+	// ƒƒCƒ„[ƒtƒŒ[ƒ€—pWVPƒŠƒ\[ƒX
+	instance.wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
+
+	// WVPƒŠƒ\[ƒX‚ğMap
+	HRESULT hr = instance.wvpResource->Map(0, nullptr, reinterpret_cast<void **>(&instance.wvpData));
+
+	assert(SUCCEEDED(hr));
+	(void)hr;
+
+	// ‰Šú’l
+	instance.wvpData->WVP = Matrix4x4::MakeIdentity4x4();
+
+	instance.wvpData->world = Matrix4x4::MakeIdentity4x4();
+
+	return instance;
+}
+
+
+
+// WindowsƒAƒvƒŠ‚Å‚ÌƒGƒ“ƒgƒŠ[ƒ|ƒCƒ“ƒg(mainŠÖ”)
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	CoInitializeEx(0, COINIT_MULTITHREADED);
 
 	DirectXResourceLeakChecker leakCheck;
 
-	// ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«ã®ä½œæˆ
+	// ƒƒOƒtƒ@ƒCƒ‹‚Ìì¬
 	std::ofstream log = CreateLogFile();
 
-	// èª°ã‚‚æ•æ‰ã§ããªã‹ã£ãŸå ´åˆã«æ•æ‰ã™ã‚‹é–¢æ•°ã‚’ç™»éŒ²
+	// ’N‚à•ß‘¨‚Å‚«‚È‚©‚Á‚½ê‡‚É•ß‘¨‚·‚éŠÖ”‚ğ“o˜^
 	SetUnhandledExceptionFilter(ExportDump);
 
 	std::unique_ptr<Window> window = std::make_unique<Window>();
 	window->Initialize();
 
-	// DirectXã®åŸºç¤åˆæœŸåŒ–
+	// DirectX‚ÌŠî‘b‰Šú‰»
 	std::unique_ptr<DirectXCore> directXCore = std::make_unique<DirectXCore>();
 	directXCore->Initialize(log, window.get());
 
-	// DirectXCoreãŒç®¡ç†ã™ã‚‹ãƒªã‚½ãƒ¼ã‚¹ã‚’å‚ç…§
+	// DirectXCore‚ªŠÇ—‚·‚éƒŠƒ\[ƒX‚ğQÆ
 	const auto &device = directXCore->GetDevice();
 	const auto &commandQueue = directXCore->GetCommandQueue();
 	const auto &commandAllocator = directXCore->GetCommandAllocator();
@@ -1039,55 +1095,55 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	const auto &dxcCompiler = directXCore->GetDxcCompiler();
 	const auto &includeHandler = directXCore->GetIncludeHandler();
 
-	// å¾Œç¶šå‡¦ç†ã§ä½¿ç”¨ã™ã‚‹HRESULT
+	// Œã‘±ˆ—‚Åg—p‚·‚éHRESULT
 	HRESULT hr = S_OK;
 
-	// RootSignatureä½œæˆ
+	// RootSignatureì¬
 	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-	// RootParameterä½œæˆã€‚PixelShaderã®materialã¨VertexShaderã®Transform
+	// RootParameterì¬BPixelShader‚Ìmaterial‚ÆVertexShader‚ÌTransform
 	D3D12_ROOT_PARAMETER rootParameters[4] = {};
-	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // å®šæ•°ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼
-	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // ãƒ”ã‚¯ã‚»ãƒ«ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã§è¦‹ãˆã‚‹ã‚ˆã†ã«ã™ã‚‹
-	rootParameters[0].Descriptor.ShaderRegister = 0;                    // b0ã®0ã¨ä¸€è‡´ã™ã‚‹ã€‚ã‚‚ã—b11ã ã£ãŸã‚‰11ã«ã™ã‚‹
+	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // ’è”ƒoƒbƒtƒ@ƒrƒ…[
+	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // ƒsƒNƒZƒ‹ƒVƒF[ƒ_[‚ÅŒ©‚¦‚é‚æ‚¤‚É‚·‚é
+	rootParameters[0].Descriptor.ShaderRegister = 0;                    // b0‚Ì0‚Æˆê’v‚·‚éB‚à‚µb11‚¾‚Á‚½‚ç11‚É‚·‚é
 
-	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // å®šæ•°ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼
-	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // é ‚ç‚¹ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã§è¦‹ãˆã‚‹ã‚ˆã†ã«ã™ã‚‹
-	rootParameters[1].Descriptor.ShaderRegister = 0;                    // b0ã®0ã¨ä¸€è‡´ã™ã‚‹ã€‚ã‚‚ã—b11ã ã£ãŸã‚‰11ã«ã™ã‚‹
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // ’è”ƒoƒbƒtƒ@ƒrƒ…[
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // ’¸“_ƒVƒF[ƒ_[‚ÅŒ©‚¦‚é‚æ‚¤‚É‚·‚é
+	rootParameters[1].Descriptor.ShaderRegister = 0;                    // b0‚Ì0‚Æˆê’v‚·‚éB‚à‚µb11‚¾‚Á‚½‚ç11‚É‚·‚é
 
 	D3D12_DESCRIPTOR_RANGE descriptorRange[1] = {};
-	descriptorRange[0].BaseShaderRegister = 0;                                                   // 0ã‹ã‚‰å§‹ã¾ã‚‹
-	descriptorRange[0].NumDescriptors = 1;                                                       // æ•°ã¯1ã¤
-	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;                              // SRVã‚’ä½¿ã†
-	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND; // Offsetã‚’è‡ªå‹•è¨ˆç®—
+	descriptorRange[0].BaseShaderRegister = 0;                                                   // 0‚©‚çn‚Ü‚é
+	descriptorRange[0].NumDescriptors = 1;                                                       // ”‚Í1‚Â
+	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;                              // SRV‚ğg‚¤
+	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND; // Offset‚ğ©“®ŒvZ
 
-	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;      // DescriptorTableã‚’ä½¿ã†
-	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;                // PixelShaderã§ä½¿ã†
-	rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;             // Tableã®ä¸­èº«ã®é…åˆ—ã‚’æŒ‡å®š
-	rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange); // Tableã§åˆ©ç”¨ã™ã‚‹æ•°
+	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;      // DescriptorTable‚ğg‚¤
+	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;                // PixelShader‚Åg‚¤
+	rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;             // Table‚Ì’†g‚Ì”z—ñ‚ğw’è
+	rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange); // Table‚Å—˜—p‚·‚é”
 
-	// DirectionalLightç”¨
+	// DirectionalLight—p
 	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[3].Descriptor.ShaderRegister = 1;
 	
-	descriptionRootSignature.pParameters = rootParameters;              // RootParameterã®é…åˆ—ã¸ã®ãƒã‚¤ãƒ³ã‚¿
-	descriptionRootSignature.NumParameters = _countof(rootParameters);  // RootParameterã®æ•°
+	descriptionRootSignature.pParameters = rootParameters;              // RootParameter‚Ì”z—ñ‚Ö‚Ìƒ|ƒCƒ“ƒ^
+	descriptionRootSignature.NumParameters = _countof(rootParameters);  // RootParameter‚Ì”
 
 	D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
-	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;   // ãƒã‚¤ãƒªãƒ‹ã‚¢ãƒ•ã‚£ãƒ«ã‚¿
-	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP; // 0~1ã®ç¯„å›²å¤–ã‚’ãƒªãƒ”ãƒ¼ãƒˆ
+	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;   // ƒoƒCƒŠƒjƒAƒtƒBƒ‹ƒ^
+	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP; // 0~1‚Ì”ÍˆÍŠO‚ğƒŠƒs[ƒg
 	staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 	staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;     // æ¯”è¼ƒã—ãªã„
-	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;                       // ã‚ã‚Šã£ãŸã‘ã®Mipmapã‚’ä½¿ã†
-	staticSamplers[0].ShaderRegister = 0;                               // ãƒ¬ã‚¸ã‚¹ã‚¿ç•ªå·0ã‚’ä½¿ã†
-	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderã§ä½¿ã†
+	staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;     // ”äŠr‚µ‚È‚¢
+	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;                       // ‚ ‚è‚Á‚½‚¯‚ÌMipmap‚ğg‚¤
+	staticSamplers[0].ShaderRegister = 0;                               // ƒŒƒWƒXƒ^”Ô†0‚ğg‚¤
+	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShader‚Åg‚¤
 	descriptionRootSignature.pStaticSamplers = staticSamplers;
 	descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
 
-	// ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚ºã—ã¦	ãƒã‚¤ãƒŠãƒªã«ã™ã‚‹
+	// ƒVƒŠƒAƒ‰ƒCƒY‚µ‚Ä	ƒoƒCƒiƒŠ‚É‚·‚é
 	Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob;
 	Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
 
@@ -1103,7 +1159,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		assert(false);
 	}
 
-	// ãƒã‚¤ãƒŠãƒªã‚’å…ƒã«ç”Ÿæˆ
+	// ƒoƒCƒiƒŠ‚ğŒ³‚É¶¬
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
 	hr = device->CreateRootSignature(
 		0,
@@ -1131,7 +1187,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	inputLayoutDesc.pInputElementDescs = inputElementDescs;
 	inputLayoutDesc.NumElements = _countof(inputElementDescs);
 
-	// BlendStateã®è¨­å®š
+	// BlendState‚Ìİ’è
 	std::vector<D3D12_BLEND_DESC> blendDescs{};
 	blendDescs.reserve(BLEND_MODE_COUNT);
 
@@ -1139,33 +1195,33 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		blendDescs.push_back(CreateBlendDesc(static_cast<BlendMode>(blendMode)));
 	}
 
-	// RasterizerStateã®è¨­å®š
+	// RasterizerState‚Ìİ’è
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
-	// è£é¢ï¼ˆæ™‚è¨ˆå›ã‚Šï¼‰ã‚’è¡¨ç¤ºã—ãªã„
+	// — –ÊiŒv‰ñ‚èj‚ğ•\¦‚µ‚È‚¢
 	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
-	// ä¸‰è§’å½¢ã®ä¸­ã‚’å¡—ã‚Šã¤ã¶ã™
+	// OŠpŒ`‚Ì’†‚ğ“h‚è‚Â‚Ô‚·
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
-	// Shaderã‚’ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ã™ã‚‹
+	// Shader‚ğƒRƒ“ƒpƒCƒ‹‚·‚é
 	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob = CompileShader(L"resources/shaders/Object3D.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 	assert(vertexShaderBlob != nullptr);
 
 	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob = CompileShader(L"resources/shaders/Object3D.PS.hlsl", L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 	assert(pixelShaderBlob != nullptr);
 
-	// DepthStencilStateã®è¨­å®š
+	// DepthStencilState‚Ìİ’è
 	D3D12_DEPTH_STENCIL_DESC depthStencilDesc{};
 
-	// Depthã®æ©Ÿèƒ½ã‚’æœ‰åŠ¹åŒ–ã™ã‚‹
+	// Depth‚Ì‹@”\‚ğ—LŒø‰»‚·‚é
 	depthStencilDesc.DepthEnable = true;
 
-	// æ›¸ãè¾¼ã¿
+	// ‘‚«‚İ
 	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 
-	// æ¯”è¼ƒé–¢æ•°ã¯LessEqualã€‚ã¤ã¾ã‚Šã€è¿‘ã‘ã‚Œã°æç”»ã•ã‚Œã‚‹
+	// ”äŠrŠÖ”‚ÍLessEqualB‚Â‚Ü‚èA‹ß‚¯‚ê‚Î•`‰æ‚³‚ê‚é
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
-	// PSOã®è¨­å®š
+	// PSO‚Ìİ’è
 	std::vector<Microsoft::WRL::ComPtr<ID3D12PipelineState>> graphicsPipelineStates{};
 	graphicsPipelineStates.resize(BLEND_MODE_COUNT);
 
@@ -1183,46 +1239,91 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		graphicsPipelineStateDesc.SampleDesc.Count = 1;
 		graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
-		// DepthStencilã®è¨­å®š
+		// DepthStencil‚Ìİ’è
 		graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
 		graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
-		// å®Ÿéš›ã«ç”Ÿæˆ
+		// ÀÛ‚É¶¬
 		hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(graphicsPipelineStates[blendMode].GetAddressOf()));
 		assert(SUCCEEDED(hr));
 	}
 
+
 	// ===========================================================
-	// Particleç”¨RootSignatureã®ä½œæˆ
+	// Emitter”ÍˆÍ•\¦—p‚ÌLine PSO
 	// ===========================================================
 
-	// Particleç”¨RootSignatureDesc
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC emitterLinePipelineDesc{};
+
+	emitterLinePipelineDesc.pRootSignature = rootSignature.Get();
+	emitterLinePipelineDesc.InputLayout = inputLayoutDesc;
+
+	emitterLinePipelineDesc.VS = {vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize()};
+	emitterLinePipelineDesc.PS = {pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize()};
+
+	// ƒuƒŒƒ“ƒh‚È‚µ
+	emitterLinePipelineDesc.BlendState = CreateBlendDesc(BLEND_MODE_NONE);
+
+	// ’Êí‚ÌRasterizerİ’è‚ğ—˜—p
+	emitterLinePipelineDesc.RasterizerState = rasterizerDesc;
+
+	// DepthTest‚ÍˆÛ‚µADepth‚É‚Í‘‚«‚Ü‚È‚¢
+	D3D12_DEPTH_STENCIL_DESC emitterLineDepthDesc = depthStencilDesc;
+	emitterLineDepthDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+
+	emitterLinePipelineDesc.DepthStencilState = emitterLineDepthDesc;
+
+	// ¡‰ñ‚ÍLINEƒgƒ|ƒƒW[‚ğg—p
+	emitterLinePipelineDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
+
+	emitterLinePipelineDesc.NumRenderTargets = 1;
+	emitterLinePipelineDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+
+	emitterLinePipelineDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	emitterLinePipelineDesc.SampleDesc.Count = 1;
+	emitterLinePipelineDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+
+	// PSO¶¬
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> emitterLinePipelineState;
+
+	hr = device->CreateGraphicsPipelineState(&emitterLinePipelineDesc, IID_PPV_ARGS(emitterLinePipelineState.GetAddressOf()));
+
+	assert(SUCCEEDED(hr));
+	(void)hr;
+
+
+	// ===========================================================
+	// Particle—pRootSignature‚Ìì¬
+	// ===========================================================
+
+	// Particle—pRootSignatureDesc
 	D3D12_ROOT_SIGNATURE_DESC particleRootSignatureDesc{};
 	particleRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-	// Particleç”¨RootParameter
+	// Particle—pRootParameter
 	D3D12_ROOT_PARAMETER particleRootParameters[3] = {};
 
-	// Materialç”¨CBV
+	// Material—pCBV
 	particleRootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	particleRootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	particleRootParameters[0].Descriptor.ShaderRegister = 0;
 
-	// Instancingç”¨SRVã®DescriptorRange
+	// Instancing—pSRV‚ÌDescriptorRange
 	D3D12_DESCRIPTOR_RANGE descriptorRangeForInstancing[1] = {};
 
-	descriptorRangeForInstancing[0].BaseShaderRegister = 0;                      // 0ã‹ã‚‰å§‹ã¾ã‚‹
-	descriptorRangeForInstancing[0].NumDescriptors = 1;                          // æ•°ã¯1ã¤
-	descriptorRangeForInstancing[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // SRVã‚’ä½¿ã†
+	descriptorRangeForInstancing[0].BaseShaderRegister = 0;                      // 0‚©‚çn‚Ü‚é
+	descriptorRangeForInstancing[0].NumDescriptors = 1;                          // ”‚Í1‚Â
+	descriptorRangeForInstancing[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // SRV‚ğg‚¤
 	descriptorRangeForInstancing[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-	// Instancingç”¨DescriptorTable
-	particleRootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // DescriptorTableã‚’ä½¿ã†
-	particleRootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;          // VertexShaderã§ä½¿ã†
-	particleRootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRangeForInstancing; // Tableã®ä¸­èº«ã®é…åˆ—ã‚’æŒ‡å®š
-	particleRootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeForInstancing); // Tableã§åˆ©ç”¨ã™ã‚‹æ•°
+	// Instancing—pDescriptorTable
+	particleRootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // DescriptorTable‚ğg‚¤
+	particleRootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;          // VertexShader‚Åg‚¤
+	particleRootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRangeForInstancing; // Table‚Ì’†g‚Ì”z—ñ‚ğw’è
+	particleRootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeForInstancing); // Table‚Å—˜—p‚·‚é”
 
-	// Textureç”¨SRVã®DescriptorRange
+	// Texture—pSRV‚ÌDescriptorRange
 	D3D12_DESCRIPTOR_RANGE particleTextureDescriptorRange[1] = {};
 
 	particleTextureDescriptorRange[0].BaseShaderRegister = 0;
@@ -1230,17 +1331,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	particleTextureDescriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	particleTextureDescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-	// Textureç”¨DescriptorTable
+	// Texture—pDescriptorTable
 	particleRootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	particleRootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	particleRootParameters[2].DescriptorTable.pDescriptorRanges = particleTextureDescriptorRange;
 	particleRootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(particleTextureDescriptorRange);
 
-	// RootParameterã‚’ç™»éŒ²
+	// RootParameter‚ğ“o˜^
 	particleRootSignatureDesc.pParameters = particleRootParameters;
 	particleRootSignatureDesc.NumParameters = _countof(particleRootParameters);
 
-	// Particleå°‚ç”¨StaticSampler
+	// Particleê—pStaticSampler
 	D3D12_STATIC_SAMPLER_DESC particleStaticSamplers[1] = {};
 
 	particleStaticSamplers[0] = staticSamplers[0];
@@ -1248,7 +1349,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	particleRootSignatureDesc.pStaticSamplers = particleStaticSamplers;
 	particleRootSignatureDesc.NumStaticSamplers = _countof(particleStaticSamplers);
 
-	// RootSignatureã‚’ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚º
+	// RootSignature‚ğƒVƒŠƒAƒ‰ƒCƒY
 	Microsoft::WRL::ComPtr<ID3DBlob> particleSignatureBlob;
 	Microsoft::WRL::ComPtr<ID3DBlob> particleErrorBlob;
 
@@ -1261,7 +1362,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		assert(false);
 	}
 
-	// Particleç”¨RootSignatureã‚’ç”Ÿæˆ
+	// Particle—pRootSignature‚ğ¶¬
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> particleRootSignature;
 
 	hr = device->CreateRootSignature(0, particleSignatureBlob->GetBufferPointer(), particleSignatureBlob->GetBufferSize(), IID_PPV_ARGS(particleRootSignature.GetAddressOf()));
@@ -1269,10 +1370,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	assert(SUCCEEDED(hr));
 
 	// ===========================================================
-	// Particleç”¨GraphicsPipelineStateã®ä½œæˆ
+	// Particle—pGraphicsPipelineState‚Ìì¬
 	// ===========================================================
 
-	// Particleç”¨InputLayout
+	// Particle—pInputLayout
 	D3D12_INPUT_ELEMENT_DESC particleInputElementDescs[3] = {};
 
 	for (uint32_t index = 0; index < _countof(particleInputElementDescs); ++index) {
@@ -1283,26 +1384,29 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	particleInputLayoutDesc.pInputElementDescs = particleInputElementDescs;
 	particleInputLayoutDesc.NumElements = _countof(particleInputElementDescs);
 
-	// Particleç”¨BlendState
-	D3D12_BLEND_DESC particleBlendDesc = CreateBlendDesc(BLEND_MODE_NORMAL);
+	// Particle—pBlendState
+	D3D12_BLEND_DESC particleBlendDesc = CreateBlendDesc(BLEND_MODE_ADD);
 
-	// Particleç”¨RasterizerState
+	// Particle—pRasterizerState
 	D3D12_RASTERIZER_DESC particleRasterizerDesc = rasterizerDesc;
 
-	// Particleç”¨DepthStencilState
+	// Particle—pDepthStencilState
 	D3D12_DEPTH_STENCIL_DESC particleDepthStencilDesc = depthStencilDesc;
 
-	// Particleç”¨VertexShaderã®ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«
+	// Particle‚ÍDepth‚ğ‘‚«‚Ü‚È‚¢
+	particleDepthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+
+	// Particle—pVertexShader‚ÌƒRƒ“ƒpƒCƒ‹
 	Microsoft::WRL::ComPtr<IDxcBlob> particleVertexShaderBlob = CompileShader(L"resources/shaders/Particle.VS.hlsl", L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 
 	assert(particleVertexShaderBlob != nullptr);
 
-	// Particleç”¨PixelShaderã®ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«
+	// Particle—pPixelShader‚ÌƒRƒ“ƒpƒCƒ‹
 	Microsoft::WRL::ComPtr<IDxcBlob> particlePixelShaderBlob = CompileShader(L"resources/shaders/Particle.PS.hlsl", L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get(), log);
 
 	assert(particlePixelShaderBlob != nullptr);
 
-	// Particleç”¨PSOã®è¨­å®š
+	// Particle—pPSO‚Ìİ’è
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC particlePipelineStateDesc{};
 
 	particlePipelineStateDesc.pRootSignature = particleRootSignature.Get();
@@ -1321,31 +1425,31 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	particlePipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 	particlePipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
-	// Particleç”¨PSOã‚’ç”Ÿæˆ
+	// Particle—pPSO‚ğ¶¬
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> particlePipelineState;
 
 	hr = device->CreateGraphicsPipelineState(&particlePipelineStateDesc, IID_PPV_ARGS(particlePipelineState.GetAddressOf()));
 
 	assert(SUCCEEDED(hr));
 
-	// ãƒãƒ†ãƒªã‚¢ãƒ«ç”¨ã®ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹ã€‚ä»Šå›ã¯colorã‚’1ã¤åˆ†ã®ã‚µã‚¤ã‚ºã‚’ç”¨æ„ã™ã‚‹
+	// ƒ}ƒeƒŠƒAƒ‹—p‚ÌƒŠƒ\[ƒX‚ğì‚éB¡‰ñ‚Ícolor‚ğ1‚Â•ª‚ÌƒTƒCƒY‚ğ—pˆÓ‚·‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> materialResource = CreateBufferResource(device, sizeof(Material));
 
-	// ãƒãƒ†ãƒªã‚¢ãƒ«ã«ãƒ‡ãƒ¼ã‚¿ã‚’æ›¸ãè¾¼ã‚€ã€‚
+	// ƒ}ƒeƒŠƒAƒ‹‚Éƒf[ƒ^‚ğ‘‚«‚ŞB
 	Material *materialData = nullptr;
 
-	// æ›¸ãè¾¼ã‚€ãŸã‚ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’å–å¾—
+	// ‘‚«‚Ş‚½‚ß‚ÌƒAƒhƒŒƒX‚ğæ“¾
 	materialResource->Map(0, nullptr, reinterpret_cast<void **>(&materialData));
 
-	// ä»Šå›ã¯èµ¤ã‚’æ›¸ãè¾¼ã‚“ã§ã¿ã‚‹
+	// ¡‰ñ‚ÍÔ‚ğ‘‚«‚ñ‚Å‚İ‚é
 	materialData->color = {1.0f, 1.0f, 1.0f, 1.0f};
 
-	// åˆæœŸãƒ©ã‚¤ãƒ†ã‚£ãƒ³ã‚°æ–¹å¼ã¯Half Lambert
+	// ‰Šúƒ‰ƒCƒeƒBƒ“ƒO•û®‚ÍHalf Lambert
 	materialData->lightingType = LIGHTING_HALF_LAMBERT;
 
 	materialData->uvTransform = Matrix4x4::MakeIdentity4x4();
 
-	// ã‚¹ãƒ—ãƒ©ã‚¤ãƒˆã¯ãƒ©ã‚¤ãƒ†ã‚£ãƒ³ã‚°ã—ãªã„ã®ã§ã€ã‚¹ãƒ—ãƒ©ã‚¤ãƒˆç”¨ã®ãƒãƒ†ãƒªã‚¢ãƒ«ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// ƒXƒvƒ‰ƒCƒg‚Íƒ‰ƒCƒeƒBƒ“ƒO‚µ‚È‚¢‚Ì‚ÅAƒXƒvƒ‰ƒCƒg—p‚Ìƒ}ƒeƒŠƒAƒ‹ƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> materialResourceSprite = CreateBufferResource(device, sizeof(Material));
 
 	Material *materialDataSprite = nullptr;
@@ -1354,100 +1458,95 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	materialDataSprite->lightingType = LIGHTING_NONE;
 	materialDataSprite->uvTransform = Matrix4x4::MakeIdentity4x4();
 
-	// å¹³è¡Œå…‰æºç”¨ã®ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// •½sŒõŒ¹—p‚ÌƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
 
-	// ãƒ‡ãƒ¼ã‚¿ã‚’æ›¸ãè¾¼ã‚€
+	// ƒf[ƒ^‚ğ‘‚«‚Ş
 	DirectionalLight *directionalLightData = nullptr;
 
-	// æ›¸ãè¾¼ã‚€ãŸã‚ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’å–å¾—
+	// ‘‚«‚Ş‚½‚ß‚ÌƒAƒhƒŒƒX‚ğæ“¾
 	directionalLightResource->Map(0, nullptr, reinterpret_cast<void **>(&directionalLightData));
 
-	// ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤
+	// ƒfƒtƒHƒ‹ƒg’l
 	directionalLightData->color = {1.0f, 1.0f, 1.0f, 1.0f};
 	directionalLightData->direction = {0.0f, -1.0f, 0.0f};
 	directionalLightData->intensity = 1.0f;
 
-	// TransformationMatrixç”¨ã®ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// TransformationMatrix—p‚ÌƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
 
-	// ãƒ‡ãƒ¼ã‚¿ã‚’æ›¸ãè¾¼ã‚€
+	// ƒf[ƒ^‚ğ‘‚«‚Ş
 	TransformationMatrix *wvpData = nullptr;
 
-	// æ›¸ãè¾¼ã‚€ãŸã‚ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’å–å¾—
+	// ‘‚«‚Ş‚½‚ß‚ÌƒAƒhƒŒƒX‚ğæ“¾
 	wvpResource->Map(0, nullptr, reinterpret_cast<void **>(&wvpData));
 
-	// å˜ä½è¡Œåˆ—ã‚’æ›¸ãè¾¼ã‚“ã§ãŠã
+	// ’PˆÊs—ñ‚ğ‘‚«‚ñ‚Å‚¨‚­
 	wvpData->WVP = Matrix4x4::MakeIdentity4x4();
-	wvpData->World = Matrix4x4::MakeIdentity4x4();
+	wvpData->world = Matrix4x4::MakeIdentity4x4();
 
-	// ãƒ¢ãƒ‡ãƒ«èª­ã¿è¾¼ã¿
+	// ƒ‚ƒfƒ‹“Ç‚İ‚İ
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
 
-	// Particleç”¨ãƒ¢ãƒ‡ãƒ«ã®ä½œæˆ
+	// Particle—pƒ‚ƒfƒ‹‚Ìì¬
 
 	ModelData particleModelData{};
 	MeshData particleMeshData{};
 	particleMeshData.name = "particle";
 
-	// å·¦ä¸Š
+	// ¶ã
 	particleMeshData.vertices.push_back({{1.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}});
 
-	// å³ä¸Š
+	// ‰Eã
 	particleMeshData.vertices.push_back({{-1.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}});
 
-	// å·¦ä¸‹
+	// ¶‰º
 	particleMeshData.vertices.push_back({{1.0f, -1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}});
 
-	// å³ä¸Š
+	// ‰Eã
 	particleMeshData.vertices.push_back({{-1.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}});
 
-	// å·¦ä¸‹
+	// ¶‰º
 	particleMeshData.vertices.push_back({{1.0f, -1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}});
 
-	// å³ä¸‹
+	// ‰E‰º
 	particleMeshData.vertices.push_back({{-1.0f, -1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}});
 
 	particleModelData.meshes.push_back(particleMeshData);
 
-	// Particleç”¨VertexBufferã®ä½œæˆ
+	// Particle—pVertexBuffer‚Ìì¬
 	MeshResource particleMeshResource = CreateMeshResource(device, particleMeshData);
 
+	// Emitter”ÍˆÍ•\¦—p‚ÌƒƒbƒVƒ…
+	MeshData emitterWireMeshData = CreateWireBoxMeshData();
+
+	MeshResource emitterWireMeshResource = CreateMeshResource(device, emitterWireMeshData);
+
 	// ===========================================================
-	// Instancingç”¨Resourceã®ä½œæˆ
+	// Instancing—pResource‚Ìì¬
 	// ===========================================================
 
-	// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹æ•°
-	const uint32_t kNumInstance = 10;
+	// Instancing—p‚ÌTransformationMatrixƒŠƒ\[ƒX‚ğì‚é
+	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource = CreateBufferResource(device, sizeof(ParticleForGPU) * ParticleSystem::kNumMaxInstance);
 
-	// Instancingç”¨ã®TransformationMatrixãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
-	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource = CreateBufferResource(device, sizeof(TransformationMatrix) * kNumInstance);
+	// ‘‚«‚Ş‚½‚ß‚ÌƒAƒhƒŒƒX‚ğæ“¾
+	ParticleForGPU *instancingData = nullptr;
 
-	// æ›¸ãè¾¼ã‚€ãŸã‚ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’å–å¾—
-	TransformationMatrix *instancingData = nullptr;
 
 	hr = instancingResource->Map(0, nullptr, reinterpret_cast<void **>(&instancingData));
 
 	assert(SUCCEEDED(hr));
 
-	// å˜ä½è¡Œåˆ—ã‚’æ›¸ãè¾¼ã‚“ã§ãŠã
-	for (uint32_t index = 0; index < kNumInstance; ++index) {
+	// ’PˆÊs—ñ‚ğ‘‚«‚ñ‚Å‚¨‚­
+	for (uint32_t index = 0; index < ParticleSystem::kNumMaxInstance; ++index) {
 		instancingData[index].WVP = Matrix4x4::MakeIdentity4x4();
-		instancingData[index].World = Matrix4x4::MakeIdentity4x4();
-	}
-
-	// Particleç”¨Transformã®ä½œæˆ
-	Particle particles[kNumInstance];
-
-	for (uint32_t index = 0; index < kNumInstance; ++index) {
-		particles[index].transform.scale = {1.0f, 1.0f, 1.0f};
-		particles[index].transform.rotate = {0.0f, 0.0f, 0.0f};
-		particles[index].transform.translate = {index * 0.1f, index * 0.1f, index * 0.1f};
+		instancingData[index].world = Matrix4x4::MakeIdentity4x4();
+		instancingData[index].color = {1.0f, 1.0f, 1.0f, 1.0f};
 	}
 
 	ModelData sphereModelData = CreateSphereModelData(16, 1.0f);
 
-	// é…å¸ƒãƒ¢ãƒ‡ãƒ«
+	// ”z•zƒ‚ƒfƒ‹
 	ModelData multiMeshModelData = LoadObjFile("resources", "multiMesh.obj");
 	ModelData multiMaterialModelData = LoadObjFile("resources", "multiMaterial.obj");
 	ModelData teapotModelData = LoadObjFile("resources", "teapot.obj");
@@ -1455,73 +1554,73 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ModelData suzanneModelData = LoadObjFile("resources", "suzanne.obj");
 	ModelData fenceModelData = LoadObjFile("resources", "fence.obj");
 
-	// Spriteç”¨ã®é ‚ç‚¹ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// Sprite—p‚Ì’¸“_ƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
 
-	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼ã‚’ä½œæˆã™ã‚‹
+	// ’¸“_ƒoƒbƒtƒ@ƒrƒ…[‚ğì¬‚·‚é
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
 
-	// ãƒªã‚½ãƒ¼ã‚¹ã®å…ˆé ­ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‹ã‚‰ä½¿ã†
+	// ƒŠƒ\[ƒX‚Ìæ“ª‚ÌƒAƒhƒŒƒX‚©‚çg‚¤
 	vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
 
-	// ä½¿ç”¨ã™ã‚‹ãƒªã‚½ãƒ¼ã‚¹ã®ã‚µã‚¤ã‚ºã¯é ‚ç‚¹4ã¤åˆ†ã®ã‚µã‚¤ã‚º
+	// g—p‚·‚éƒŠƒ\[ƒX‚ÌƒTƒCƒY‚Í’¸“_4‚Â•ª‚ÌƒTƒCƒY
 	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 4;
 
-	// 1é ‚ç‚¹ã‚ãŸã‚Šã®ã‚µã‚¤ã‚º
+	// 1’¸“_‚ ‚½‚è‚ÌƒTƒCƒY
 	vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
 
-	// Spriteç”¨ã®TransformationMatrixç”¨ã®ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// Sprite—p‚ÌTransformationMatrix—p‚ÌƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(TransformationMatrix));
 
-	// ãƒ‡ãƒ¼ã‚¿ã‚’æ›¸ãè¾¼ã‚€
+	// ƒf[ƒ^‚ğ‘‚«‚Ş
 	TransformationMatrix *transformationMatrixDataSprite = nullptr;
 
-	// æ›¸ãè¾¼ã‚€ãŸã‚ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’å–å¾—
+	// ‘‚«‚Ş‚½‚ß‚ÌƒAƒhƒŒƒX‚ğæ“¾
 	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void **>(&transformationMatrixDataSprite));
 
-	// å˜ä½è¡Œåˆ—ã‚’æ›¸ãã“ã‚“ã§ãŠã
+	// ’PˆÊs—ñ‚ğ‘‚«‚±‚ñ‚Å‚¨‚­
 	transformationMatrixDataSprite->WVP = Matrix4x4::MakeIdentity4x4();
-	transformationMatrixDataSprite->World = Matrix4x4::MakeIdentity4x4();
+	transformationMatrixDataSprite->world = Matrix4x4::MakeIdentity4x4();
 
 	VertexData *vertexDataSprite = nullptr;
 	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void **>(&vertexDataSprite));
 
-	// å·¦ä¸‹
+	// ¶‰º
 	vertexDataSprite[0].position = {0.0f, 360.0f, 0.0f, 1.0f};
 	vertexDataSprite[0].texcoord = {0.0f, 1.0f};
 	vertexDataSprite[0].normal = {0.0f, 0.0f, -1.0f};
 
-	// å·¦ä¸Š
+	// ¶ã
 	vertexDataSprite[1].position = {0.0f, 0.0f, 0.0f, 1.0f};
 	vertexDataSprite[1].texcoord = {0.0f, 0.0f};
 	vertexDataSprite[1].normal = {0.0f, 0.0f, -1.0f};
 
-	// å³ä¸‹
+	// ‰E‰º
 	vertexDataSprite[2].position = {640.0f, 360.0f, 0.0f, 1.0f};
 	vertexDataSprite[2].texcoord = {1.0f, 1.0f};
 	vertexDataSprite[2].normal = {0.0f, 0.0f, -1.0f};
 
-	// å³ä¸Š
+	// ‰Eã
 	vertexDataSprite[3].position = {640.0f, 0.0f, 0.0f, 1.0f};
 	vertexDataSprite[3].texcoord = {1.0f, 0.0f};
 	vertexDataSprite[3].normal = {0.0f, 0.0f, -1.0f};
 
-	// Spriteç”¨ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒªã‚½ãƒ¼ã‚¹ã‚’ä½œã‚‹
+	// Sprite—p‚ÌƒCƒ“ƒfƒbƒNƒXƒŠƒ\[ƒX‚ğì‚é
 	Microsoft::WRL::ComPtr<ID3D12Resource> indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
 
-	// ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼ã‚’ä½œæˆã™ã‚‹
+	// ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@ƒrƒ…[‚ğì¬‚·‚é
 	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
 
-	// ãƒªã‚½ãƒ¼ã‚¹ã®å…ˆé ­ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‹ã‚‰ä½¿ã†
+	// ƒŠƒ\[ƒX‚Ìæ“ª‚ÌƒAƒhƒŒƒX‚©‚çg‚¤
 	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
 
-	// ä½¿ç”¨ã™ã‚‹ãƒªã‚½ãƒ¼ã‚¹ã®ã‚µã‚¤ã‚ºã¯ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹6ã¤åˆ†ã®ã‚µã‚¤ã‚º
+	// g—p‚·‚éƒŠƒ\[ƒX‚ÌƒTƒCƒY‚ÍƒCƒ“ƒfƒbƒNƒX6‚Â•ª‚ÌƒTƒCƒY
 	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6;
 
-	// ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã¯uint32_tã¨ã™ã‚‹
+	// ƒCƒ“ƒfƒbƒNƒX‚Íuint32_t‚Æ‚·‚é
 	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;
 
-	// ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒªã‚½ãƒ¼ã‚¹ã«ãƒ‡ãƒ¼ã‚¿ã‚’æ›¸ãè¾¼ã‚€
+	// ƒCƒ“ƒfƒbƒNƒXƒŠƒ\[ƒX‚Éƒf[ƒ^‚ğ‘‚«‚Ş
 	uint32_t *indexDataSprite = nullptr;
 	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void **>(&indexDataSprite));
 
@@ -1532,59 +1631,61 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	indexDataSprite[4] = 3;
 	indexDataSprite[5] = 2;
 
-	// Textureã‚’èª­ã‚“ã§è»¢é€ã™ã‚‹
+	// Texture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
 	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
 	const DirectX::TexMetadata &metadata = mipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
 
-	// 2æšç›®ã®Textureã‚’èª­ã‚“ã§è»¢é€ã™ã‚‹
+	// 2–‡–Ú‚ÌTexture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
 	assert(!modelData.materials.empty());
 
 	DirectX::ScratchImage mipImages2 = LoadTexture(modelData.materials[0].textureFilePath);
 	const DirectX::TexMetadata &metadata2 = mipImages2.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
 
-	// monsterBallã®Textureã‚’èª­ã‚“ã§è»¢é€ã™ã‚‹
+	// monsterBall‚ÌTexture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
 	DirectX::ScratchImage monsterBallMipImages = LoadTexture("resources/monsterBall.png");
 	const DirectX::TexMetadata &monsterBallMetadata = monsterBallMipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> monsterBallTextureResource = CreateTextureResource(device, monsterBallMetadata);
 
-	// checkerBoardã®Textureã‚’èª­ã‚“ã§è»¢é€ã™ã‚‹
+	// checkerBoard‚ÌTexture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
 	DirectX::ScratchImage checkerBoardMipImages = LoadTexture("resources/checkerBoard.png");
 	const DirectX::TexMetadata &checkerBoardMetadata = checkerBoardMipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> checkerBoardTextureResource = CreateTextureResource(device, checkerBoardMetadata);
 
-	// white1x1ã®Textureã‚’èª­ã‚“ã§è»¢é€ã™ã‚‹
+	// white1x1‚ÌTexture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
 	DirectX::ScratchImage white1x1MipImages = LoadTexture("resources/white1x1.png");
 	const DirectX::TexMetadata &white1x1Metadata = white1x1MipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> white1x1TextureResource = CreateTextureResource(device, white1x1Metadata);
 
-	// fenceã®Textureã‚’èª­ã‚“ã§è»¢é€ã™ã‚‹
+	// fence‚ÌTexture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
 	DirectX::ScratchImage fenceMipImages = LoadTexture("resources/fence.png");
 	const DirectX::TexMetadata &fenceMetadata = fenceMipImages.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> fenceTextureResource = CreateTextureResource(device, fenceMetadata);
 
-	// Textureè»¢é€ç”¨ã®CommandListã‚’æº–å‚™
+	// Particle—p‚ÌTexture‚ğ“Ç‚ñ‚Å“]‘—‚·‚é
+	DirectX::ScratchImage circleMipImages = LoadTexture("resources/circle.png");
+	const DirectX::TexMetadata &circleMetadata = circleMipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> circleTextureResource = CreateTextureResource(device, circleMetadata);
+
+
+	// Texture“]‘——p‚ÌCommandList‚ğ€”õ
 	hr = commandAllocator->Reset();
 	assert(SUCCEEDED(hr));
 
 	hr = commandList->Reset(commandAllocator.Get(), nullptr);
 	assert(SUCCEEDED(hr));
 
-	// Textureãƒ‡ãƒ¼ã‚¿ã‚’è»¢é€ã™ã‚‹ã‚³ãƒãƒ³ãƒ‰ã‚’ç©ã‚€
+	// Textureƒf[ƒ^‚ğ“]‘—‚·‚éƒRƒ}ƒ“ƒh‚ğÏ‚Ş
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = UploadTextureData(textureResource, mipImages, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 = UploadTextureData(textureResource2, mipImages2, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateMonsterBallResource = UploadTextureData(monsterBallTextureResource, monsterBallMipImages, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateCheckerBoardResource = UploadTextureData(checkerBoardTextureResource, checkerBoardMipImages, device, commandList);
-
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateWhite1x1Resource = UploadTextureData(white1x1TextureResource, white1x1MipImages, device, commandList);
-	
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateFenceResource = UploadTextureData(fenceTextureResource, fenceMipImages, device, commandList);
+	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateCircleResource = UploadTextureData(circleTextureResource, circleMipImages, device, commandList);
 
-	// CommandListã‚’Closeã—ã€CommandQueueã«ExecuteCommandListsã‚’ä½¿ã„ã‚­ãƒƒã‚¯ã™ã‚‹
+	// CommandList‚ğClose‚µACommandQueue‚ÉExecuteCommandLists‚ğg‚¢ƒLƒbƒN‚·‚é
 	hr = commandList->Close();
 	assert(SUCCEEDED(hr));
 
@@ -1593,123 +1694,124 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	directXCore->WaitForGPU();
 
-	// æœ€åˆã®æç”»ãƒ•ãƒ¬ãƒ¼ãƒ ã«å‘ã‘ã¦ã‚³ãƒãƒ³ãƒ‰ã‚¢ãƒ­ã‚±ãƒ¼ã‚¿ã‚’ãƒªã‚»ãƒƒãƒˆ
+	// Å‰‚Ì•`‰æƒtƒŒ[ƒ€‚ÉŒü‚¯‚ÄƒRƒ}ƒ“ƒhƒAƒƒP[ƒ^‚ğƒŠƒZƒbƒg
 	hr = commandAllocator->Reset();
 	assert(SUCCEEDED(hr));
 
-	// æœ€åˆã®æç”»ãƒ•ãƒ¬ãƒ¼ãƒ ã«å‘ã‘ã¦ã‚³ãƒãƒ³ãƒ‰ãƒªã‚¹ãƒˆã‚’ãƒªã‚»ãƒƒãƒˆ
+	// Å‰‚Ì•`‰æƒtƒŒ[ƒ€‚ÉŒü‚¯‚ÄƒRƒ}ƒ“ƒhƒŠƒXƒg‚ğƒŠƒZƒbƒg
 	hr = commandList->Reset(commandAllocator.Get(), nullptr);
 	assert(SUCCEEDED(hr));
 
-	// ã“ã“ã¾ã§ããŸã‚‰è»¢é€ã¯çµ‚ã‚ã£ã¦ã„ã‚‹ã®ã§ã€IntermediateResourceã¯è§£æ”¾ã—ã¦ã‚‚è‰¯ã„
+	// ‚±‚±‚Ü‚Å‚«‚½‚ç“]‘—‚ÍI‚í‚Á‚Ä‚¢‚é‚Ì‚ÅAIntermediateResource‚Í‰ğ•ú‚µ‚Ä‚à—Ç‚¢
 	intermediateResource.Reset();
 	intermediateResource2.Reset();
 	intermediateMonsterBallResource.Reset();
 	intermediateCheckerBoardResource.Reset();
 	intermediateWhite1x1Resource.Reset();
 	intermediateFenceResource.Reset();
+	intermediateCircleResource.Reset();
 
 	// ===========================================================
-	// Textureç”¨SRVã®ä½œæˆ
+	// Texture—pSRV‚Ìì¬
 	// ===========================================================
 
-	// uvCheckerã®metadataã‚’åŸºã«SRVã®è¨­å®š
+	// uvChecker‚Ìmetadata‚ğŠî‚ÉSRV‚Ìİ’è
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
 	srvDesc.Format = metadata.format;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels);
 
-	// uvCheckerç”¨ã®SRVã‚’ä½œæˆã™ã‚‹DescriptorHeapã®å ´æ‰€ã‚’æ±ºã‚ã‚‹
-	// index 0 ã¯ImGuiãŒä½¿ã†ãŸã‚ã€index 1 ã‚’ä½¿ã†
+	// uvChecker—p‚ÌSRV‚ğì¬‚·‚éDescriptorHeap‚ÌêŠ‚ğŒˆ‚ß‚é
+	// index 0 ‚ÍImGui‚ªg‚¤‚½‚ßAindex 1 ‚ğg‚¤
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
 
-	// uvCheckerç”¨SRVã®ç”Ÿæˆ
+	// uvChecker—pSRV‚Ì¶¬
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
 
-	// planeTextureã®metadataã‚’åŸºã«SRVã®è¨­å®š
+	// planeTexture‚Ìmetadata‚ğŠî‚ÉSRV‚Ìİ’è
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2{};
 	srvDesc2.Format = metadata2.format;
 	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc2.Texture2D.MipLevels = UINT(metadata2.mipLevels);
 
-	// planeTextureç”¨ã®SRVã‚’ä½œæˆã™ã‚‹DescriptorHeapã®å ´æ‰€ã‚’æ±ºã‚ã‚‹
+	// planeTexture—p‚ÌSRV‚ğì¬‚·‚éDescriptorHeap‚ÌêŠ‚ğŒˆ‚ß‚é
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 
-	// planeTextureç”¨SRVã®ç”Ÿæˆ
+	// planeTexture—pSRV‚Ì¶¬
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 
-	// monsterBallã®metadataã‚’åŸºã«SRVã®è¨­å®š
+	// monsterBall‚Ìmetadata‚ğŠî‚ÉSRV‚Ìİ’è
 	D3D12_SHADER_RESOURCE_VIEW_DESC monsterBallSrvDesc{};
 	monsterBallSrvDesc.Format = monsterBallMetadata.format;
 	monsterBallSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	monsterBallSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	monsterBallSrvDesc.Texture2D.MipLevels = UINT(monsterBallMetadata.mipLevels);
 
-	// monsterBallç”¨ã®SRVã‚’ä½œæˆã™ã‚‹DescriptorHeapã®å ´æ‰€ã‚’æ±ºã‚ã‚‹
+	// monsterBall—p‚ÌSRV‚ğì¬‚·‚éDescriptorHeap‚ÌêŠ‚ğŒˆ‚ß‚é
 	D3D12_CPU_DESCRIPTOR_HANDLE monsterBallTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE monsterBallTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
 
-	// monsterBallç”¨SRVã®ç”Ÿæˆ
+	// monsterBall—pSRV‚Ì¶¬
 	device->CreateShaderResourceView(monsterBallTextureResource.Get(), &monsterBallSrvDesc, monsterBallTextureSrvHandleCPU);
 
-	// checkerBoardã®metadataã‚’åŸºã«SRVã®è¨­å®š
+	// checkerBoard‚Ìmetadata‚ğŠî‚ÉSRV‚Ìİ’è
 	D3D12_SHADER_RESOURCE_VIEW_DESC checkerBoardSrvDesc{};
 	checkerBoardSrvDesc.Format = checkerBoardMetadata.format;
 	checkerBoardSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	checkerBoardSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	checkerBoardSrvDesc.Texture2D.MipLevels = UINT(checkerBoardMetadata.mipLevels);
 	
-	// checkerBoardç”¨ã®SRVã‚’ä½œæˆã™ã‚‹DescriptorHeapã®å ´æ‰€ã‚’æ±ºã‚ã‚‹
+	// checkerBoard—p‚ÌSRV‚ğì¬‚·‚éDescriptorHeap‚ÌêŠ‚ğŒˆ‚ß‚é
 	D3D12_CPU_DESCRIPTOR_HANDLE checkerBoardTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 4);
 	
 	D3D12_GPU_DESCRIPTOR_HANDLE checkerBoardTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 4);
 	
-	// checkerBoardç”¨SRVã®ç”Ÿæˆ
+	// checkerBoard—pSRV‚Ì¶¬
 	device->CreateShaderResourceView(
 		checkerBoardTextureResource.Get(),
 		&checkerBoardSrvDesc,
 		checkerBoardTextureSrvHandleCPU
 	);
 
-	// white1x1ã®metadataã‚’åŸºã«SRVã®è¨­å®š
+	// white1x1‚Ìmetadata‚ğŠî‚ÉSRV‚Ìİ’è
 	D3D12_SHADER_RESOURCE_VIEW_DESC white1x1SrvDesc{};
 	white1x1SrvDesc.Format = white1x1Metadata.format;
 	white1x1SrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	white1x1SrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	white1x1SrvDesc.Texture2D.MipLevels = UINT(white1x1Metadata.mipLevels);
 
-	// white1x1ç”¨ã®SRVã‚’ä½œæˆã™ã‚‹DescriptorHeapã®å ´æ‰€ã‚’æ±ºã‚ã‚‹
+	// white1x1—p‚ÌSRV‚ğì¬‚·‚éDescriptorHeap‚ÌêŠ‚ğŒˆ‚ß‚é
 	D3D12_CPU_DESCRIPTOR_HANDLE white1x1TextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 5);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE white1x1TextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 5);
 
-	// white1x1ç”¨SRVã®ç”Ÿæˆ
+	// white1x1—pSRV‚Ì¶¬
 	device->CreateShaderResourceView(white1x1TextureResource.Get(), &white1x1SrvDesc, white1x1TextureSrvHandleCPU);
 
-	// fenceã®metadataã‚’åŸºã«SRVã®è¨­å®š
+	// fence‚Ìmetadata‚ğŠî‚ÉSRV‚Ìİ’è
 	D3D12_SHADER_RESOURCE_VIEW_DESC fenceSrvDesc{};
 	fenceSrvDesc.Format = fenceMetadata.format;
 	fenceSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	fenceSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	fenceSrvDesc.Texture2D.MipLevels = UINT(fenceMetadata.mipLevels);
 
-	// fenceç”¨ã®SRVã‚’ä½œæˆã™ã‚‹DescriptorHeapã®å ´æ‰€ã‚’æ±ºã‚ã‚‹
+	// fence—p‚ÌSRV‚ğì¬‚·‚éDescriptorHeap‚ÌêŠ‚ğŒˆ‚ß‚é
 	D3D12_CPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE fenceTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 6);
 
-	// fenceç”¨SRVã®ç”Ÿæˆ
+	// fence—pSRV‚Ì¶¬
 	device->CreateShaderResourceView(fenceTextureResource.Get(), &fenceSrvDesc, fenceTextureSrvHandleCPU);
 
 	// ===========================================================
-	// Instancingç”¨SRVã®ä½œæˆ
+	// Instancing—pSRV‚Ìì¬
 	// ===========================================================
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC instancingSrvDesc{};
@@ -1719,18 +1821,43 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	instancingSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 	instancingSrvDesc.Buffer.FirstElement = 0;
 	instancingSrvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-	instancingSrvDesc.Buffer.NumElements = kNumInstance;
-	instancingSrvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);
+	instancingSrvDesc.Buffer.NumElements = ParticleSystem::kNumMaxInstance;
+	instancingSrvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);
 
-	// DescriptorHeapã®7ç•ªã«ç™»éŒ²
+	// DescriptorHeap‚Ì7”Ô‚É“o˜^
 	D3D12_CPU_DESCRIPTOR_HANDLE instancingSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 7);
-
 	D3D12_GPU_DESCRIPTOR_HANDLE instancingSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 7);
 
-	// SRVã‚’ç”Ÿæˆ
+	// SRV‚ğ¶¬
 	device->CreateShaderResourceView(instancingResource.Get(), &instancingSrvDesc, instancingSrvHandleCPU);
 
-	// èª­ã¿è¾¼ã¿æ¸ˆã¿ãƒ¢ãƒ‡ãƒ«ä¸€è¦§
+	// ===========================================================
+	// circle.png—pSRV‚Ìì¬
+	// ===========================================================
+
+	// SRV‚Ìİ’è
+	D3D12_SHADER_RESOURCE_VIEW_DESC circleSrvDesc{};
+
+	// ƒeƒNƒXƒ`ƒƒ‚ÌƒtƒH[ƒ}ƒbƒg
+	circleSrvDesc.Format = circleMetadata.format;
+
+	// RGBA‚Ìƒ}ƒbƒsƒ“ƒOİ’è
+	circleSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+	// 2DƒeƒNƒXƒ`ƒƒ‚Æ‚µ‚Äˆµ‚¤
+	circleSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+
+	// MipMap‚Ì”
+	circleSrvDesc.Texture2D.MipLevels = static_cast<UINT>(circleMetadata.mipLevels);
+
+	// DescriptorHeap‚Ì8”Ô‚ğg—p
+	D3D12_CPU_DESCRIPTOR_HANDLE circleSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 8);
+	D3D12_GPU_DESCRIPTOR_HANDLE circleSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 8);
+
+	// SRV‚ğ¶¬
+	device->CreateShaderResourceView(circleTextureResource.Get(), &circleSrvDesc, circleSrvHandleCPU);
+
+	// “Ç‚İ‚İÏ‚İƒ‚ƒfƒ‹ˆê——
 	std::vector<ModelResource> modelResources;
 
 	ModelMaterialResource uvCheckerMaterial{};
@@ -1837,34 +1964,47 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	);
 
 
+	ParticleDrawContext particleDrawContext{};
+
+	particleDrawContext.commandList = commandList.Get();
+	particleDrawContext.rootSignature = particleRootSignature.Get();
+	particleDrawContext.pipelineState = particlePipelineState.Get();
+	particleDrawContext.vertexBufferView = particleMeshResource.vertexBufferView;
+	particleDrawContext.materialBufferAddress = materialResource->GetGPUVirtualAddress();
+	particleDrawContext.instancingSrvHandleGPU = instancingSrvHandleGPU;
+	particleDrawContext.textureSrvHandleGPU = circleSrvHandleGPU;
+	particleDrawContext.vertexCount = static_cast<uint32_t>(particleMeshResource.vertices.size());
+
+
+
 	// ===========================================================
-	// XAudio2ã®åˆæœŸåŒ–
+	// XAudio2‚Ì‰Šú‰»
 	// ===========================================================
 
-	// XAudio2ã‚¨ãƒ³ã‚¸ãƒ³ã®ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‚’ç”Ÿæˆ
+	// XAudio2ƒGƒ“ƒWƒ“‚ÌƒCƒ“ƒXƒ^ƒ“ƒX‚ğ¶¬
 	Microsoft::WRL::ComPtr<IXAudio2> xAudio2;
 	hr = XAudio2Create(xAudio2.GetAddressOf(), 0, XAUDIO2_DEFAULT_PROCESSOR);
 	assert(SUCCEEDED(hr));
 
-	// ãƒã‚¹ã‚¿ãƒ¼ãƒœã‚¤ã‚¹ã‚’ç”Ÿæˆ
+	// ƒ}ƒXƒ^[ƒ{ƒCƒX‚ğ¶¬
 	IXAudio2MasteringVoice *masterVoice = nullptr;
 	hr = xAudio2->CreateMasteringVoice(&masterVoice);
 	assert(SUCCEEDED(hr));
 
-	// éŸ³å£°èª­ã¿è¾¼ã¿
+	// ‰¹º“Ç‚İ‚İ
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
 
-	// éŸ³å£°å†ç”Ÿ
+	// ‰¹ºÄ¶
 	SoundPlayWave(xAudio2.Get(), soundData1);
 
 
 
-	// Inputã®åˆæœŸåŒ–
+	// Input‚Ì‰Šú‰»
 	Input::GetInstance()->Initialize(window.get());
 
 
 	// ===========================================================
-	// ã‚²ãƒ¼ãƒ ç”¨å¤‰æ•°ã®å®£è¨€
+	// ƒQ[ƒ€—p•Ï”‚ÌéŒ¾
 	// ===========================================================
 
 
@@ -1872,7 +2012,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	transform.scale = {1.0f, 1.0f, 1.0f};
 
 	Transform transformSprite = {};
-	transformSprite.scale = {1.0f, 1.0f, 1.0f};
+	transformSprite.scale = {0.0f, 0.0f, 0.0f};
 	transformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	transformSprite.translate = {0.0f, 0.0f, 0.0f};
 
@@ -1881,7 +2021,46 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	uvTransformSprite.rotate = {0.0f, 0.0f, 0.0f};
 	uvTransformSprite.translate = {0.0f, 0.0f, 0.0f};
 
-	// ãƒ©ã‚¤ãƒ†ã‚£ãƒ³ã‚°æ–¹å¼
+	// Particle‚Ì‰Šú‰»
+	ParticleSystem particleSystem{};
+	particleSystem.Initialize();
+
+	// Emitterˆê——
+	std::vector<EmitterInstance> emitterInstances;
+
+	// Å‰‚ÌEmitter‚ğ1ŒÂ¶¬
+	emitterInstances.push_back(CreateEmitterInstance(device, {0.0f, 0.0f, 0.0f}));
+
+	// Particle‚Ìˆê’â~ƒtƒ‰ƒO
+	bool isParticlePause = false;
+
+	// ƒrƒ‹ƒ{[ƒh‚Ì—LŒø‰»
+	bool useBillboard = true;
+
+
+	// ƒfƒoƒbƒO•\¦—p‚ÌMaterial Resource
+	Microsoft::WRL::ComPtr<ID3D12Resource> emitterWireMaterialResource = CreateBufferResource(device, sizeof(Material));
+
+	Material *emitterWireMaterialData = nullptr;
+
+	hr = emitterWireMaterialResource->Map(0, nullptr, reinterpret_cast<void **>(&emitterWireMaterialData));
+
+	assert(SUCCEEDED(hr));
+
+	// ƒƒCƒ„[ƒtƒŒ[ƒ€‚ÌF
+	emitterWireMaterialData->color = {1.0f, 0.7f, 0.1f, 1.0f};
+
+	// ƒ‰ƒCƒeƒBƒ“ƒO‚È‚µ
+	emitterWireMaterialData->lightingType = LIGHTING_NONE;
+
+	// UV•ÏŠ·‚È‚µ
+	emitterWireMaterialData->uvTransform = Matrix4x4::MakeIdentity4x4();
+
+	// Emitter‚Ì”ÍˆÍ•\¦
+	bool showEmitterBounds = true;
+
+
+	// ƒ‰ƒCƒeƒBƒ“ƒO•û®
 	int lightingType = LIGHTING_HALF_LAMBERT;
 
 	const char *lightingTypeItems[] = {
@@ -1894,48 +2073,39 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	#ifdef USE_IMGUI
 
-	// ImGuiã§é¸æŠä¸­ã®ãƒ¢ãƒ‡ãƒ«
+	// ImGui‚Å‘I‘ğ’†‚Ìƒ‚ƒfƒ‹
 	int32_t selectedModelIndex = 0;
 
 	#endif
 
-	// ç”Ÿæˆæ¸ˆã¿ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆä¸€è¦§
+	// ¶¬Ï‚İƒIƒuƒWƒFƒNƒgˆê——
 	std::vector<Object3DInstance> objectInstances;
 
-	// åˆæœŸé…ç½®ã®ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆ
-	Transform initialObjectTransform{};
-	initialObjectTransform.scale = {1.0f, 1.0f, 1.0f};
-	initialObjectTransform.rotate = {0.0f, 0.0f, 0.0f};
-	initialObjectTransform.translate = {0.0f, 0.0f, 0.0f};
+	// ImGui‚Åİ’è‚·‚éƒp[ƒeƒBƒNƒ‹‚ÌXV‘¬“x
+	float imguiDeltaTime = 1.0f / 60.0f;
 
-	objectInstances.push_back(CreateObject3DInstance(device, 0, initialObjectTransform));
-
-	// ãƒ‘ãƒ¼ãƒ†ã‚£ã‚¯ãƒ«ã«åˆæœŸé€Ÿåº¦ã‚’ä¸ãˆã‚‹
-	for (uint32_t i = 0; i < kNumInstance; ++i) {
-		particles[i].velocty = {0.0f, 1.0f, 0.0f};
-	}
-
-	const float kDeltaTime = 1.0f / 60.0f;
+	// ƒp[ƒeƒBƒNƒ‹‚ÌXV‘¬“x
+	float deltaTime = imguiDeltaTime;
 
 	// ===========================================================
-	// ãƒ¡ã‚¤ãƒ³ãƒ«ãƒ¼ãƒ—
+	// ƒƒCƒ“ƒ‹[ƒv
 	// ===========================================================
 
 	while (true) {
 
-		// windowsã®ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å‡¦ç†
-		// falseãªã‚‰ã‚²ãƒ¼ãƒ ãƒ«ãƒ¼ãƒ—ã‚’æŠœã‘ã‚‹
+		// windows‚ÌƒƒbƒZ[ƒWˆ—
+		// false‚È‚çƒQ[ƒ€ƒ‹[ƒv‚ğ”²‚¯‚é
 		if (!window->ProcessMessage()) {
 			break;
 		}
 
 
-		// å…¥åŠ›æ›´æ–°
+		// “ü—ÍXV
 		Input::GetInstance()->Update();
 
 
 		// ===========================================================
-		// ImGuiã®æº–å‚™
+		// ImGui‚Ì€”õ
 		// ===========================================================
 
 		#ifdef USE_IMGUI
@@ -1947,35 +2117,35 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		#endif // USE_IMGUI
 
 		// ===========================================================
-		// ã“ã“ã‹ã‚‰ã‚²ãƒ¼ãƒ ã®å‡¦ç†
+		// ‚±‚±‚©‚çƒQ[ƒ€‚Ìˆ—
 		// ===========================================================
 
 
 		//
-		// æ›´æ–°å‡¦ç†
+		// XVˆ—
 		//
 
-		// æ•°å­—ã®0ã‚­ãƒ¼ãŒæŠ¼ã•ã‚Œã¦ã„ãŸã‚‰å‡ºåŠ›ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã«ã€ŒPress 0ã€ã¨è¡¨ç¤º
+		// ”š‚Ì0ƒL[‚ª‰Ÿ‚³‚ê‚Ä‚¢‚½‚ço—ÍƒEƒBƒ“ƒhƒE‚ÉuPress 0v‚Æ•\¦
 		if (Input::GetInstance()->IsPressKey(DIK_0)) {
 			OutputDebugStringA("Press 0\n");
 		}
 
-		// æ•°å­—ã®0ã‚­ãƒ¼ã‚’æŠ¼ã—ãŸç¬é–“ãªã‚‰å‡ºåŠ›ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã«ã€ŒTrigger 0ã€ã¨è¡¨ç¤º
+		// ”š‚Ì0ƒL[‚ğ‰Ÿ‚µ‚½uŠÔ‚È‚ço—ÍƒEƒBƒ“ƒhƒE‚ÉuTrigger 0v‚Æ•\¦
 		if (Input::GetInstance()->IsTriggerKey(DIK_0)) {
 			OutputDebugStringA("Trigger 0\n");
 		}
 
-		// æ•°å­—ã®0ã‚­ãƒ¼ã‚’é›¢ã—ãŸç¬é–“ãªã‚‰å‡ºåŠ›ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã«ã€ŒRelease 0ã€ã¨è¡¨ç¤º
+		// ”š‚Ì0ƒL[‚ğ—£‚µ‚½uŠÔ‚È‚ço—ÍƒEƒBƒ“ƒhƒE‚ÉuRelease 0v‚Æ•\¦
 		if (Input::GetInstance()->IsReleaseTriggerKey(DIK_0)) {
 			OutputDebugStringA("Release 0\n");
 		}
 
-		// Spaceã‚­ãƒ¼ã‚’æŠ¼ã—ãŸç¬é–“ãªã‚‰éŸ³å£°ã‚’å†ç”Ÿ
+		// SpaceƒL[‚ğ‰Ÿ‚µ‚½uŠÔ‚È‚ç‰¹º‚ğÄ¶
 		if (Input::GetInstance()->IsTriggerKey(DIK_SPACE)) {
 			SoundPlayWave(xAudio2.Get(), soundData1);
 		}
 
-		// GamePadã®Aãƒœã‚¿ãƒ³ã‚’æŠ¼ã—ãŸç¬é–“ãªã‚‰éŸ³å£°ã‚’å†ç”Ÿ
+		// GamePad‚ÌAƒ{ƒ^ƒ“‚ğ‰Ÿ‚µ‚½uŠÔ‚È‚ç‰¹º‚ğÄ¶
 		if (Input::GetInstance()->IsTriggerGamePadButton(XINPUT_GAMEPAD_A)) {
 			SoundPlayWave(xAudio2.Get(), soundData1);
 		}
@@ -1984,15 +2154,152 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 		ImGui::Begin("Texture Color");
-		// ã‚µã‚¦ãƒ³ãƒ‰ã®ã‚­ãƒ¼èª¬æ˜
+		// ƒTƒEƒ“ƒh‚ÌƒL[à–¾
 		ImGui::Text("Press SPACE key : Play Sound");
 
-		// ã‚²ãƒ¼ãƒ ãƒ‘ãƒƒãƒ‰ã®ã‚­ãƒ¼èª¬æ˜
+		// ƒQ[ƒ€ƒpƒbƒh‚ÌƒL[à–¾
 		ImGui::SeparatorText("GamePad");
 		ImGui::Text("GamePad : %s", Input::GetInstance()->IsGamePadConnected() ? "Connected" : "Not Connected");
 		ImGui::Text("Left Stick : Pivot Rotate Camera");
 		ImGui::Text("LT / RT : Move Camera Z");
 		ImGui::Text("D-Pad : Move Camera XY");
+
+
+		// ƒp[ƒeƒBƒNƒ‹ü‚è‚Ìİ’è
+		ImGui::SeparatorText("Particle");
+
+		// ‰Šú‰»
+		if (ImGui::Button("ParticleInitialize")) {
+			particleSystem.Initialize();
+		}
+
+		// ˆê’â~
+		ImGui::Checkbox("Particle Pause", &isParticlePause);
+
+		// ƒp[ƒeƒBƒNƒ‹‚ÌÀs‘¬“x
+		ImGui::DragFloat("Particle Execution speed", &imguiDeltaTime, 0.001f, 0.0f, 1.0f / 60.0f);
+
+		if (isParticlePause) {
+			deltaTime = 0.0f;
+		} else {
+			deltaTime = imguiDeltaTime;
+		}
+
+		// ƒrƒ‹ƒ{[ƒh‚Ì—LŒø‰»
+		ImGui::Checkbox("Use Billboard", &useBillboard);
+		particleSystem.SetBillboardEnabled(useBillboard);
+
+
+		ImGui::SeparatorText("Emitter Create");
+
+		// Emitter‚ğ’Ç‰Á
+		if (ImGui::Button("Create Emitter")) {
+			Vector3 position{static_cast<float>(emitterInstances.size()) * 2.0f, 0.0f, 0.0f};
+
+			emitterInstances.push_back(CreateEmitterInstance(device, position));
+		}
+
+		ImGui::Checkbox("Show Emitter Bounds", &showEmitterBounds);
+
+		ImGui::SeparatorText("Emitter List");
+
+		for (int32_t emitterIndex = 0; emitterIndex < static_cast<int32_t>(emitterInstances.size()); ++emitterIndex) {
+
+			EmitterInstance &instance = emitterInstances[emitterIndex];
+			ParticleEmitter &emitter = instance.emitter;
+
+			ImGui::PushID(emitterIndex);
+
+			bool shouldDelete = false;
+
+			std::string label = std::format("Emitter {}", emitterIndex);
+
+			if (ImGui::TreeNode(label.c_str())) {
+
+				// ‘¦”­¶
+				if (ImGui::Button("Add Particle")) {
+					emitter.Emit(particleSystem);
+				}
+
+				// —LŒøE–³Œø
+				bool enabled = emitter.IsEnabled();
+
+				if (ImGui::Checkbox("Enable Emitter", &enabled)) {
+					emitter.SetEnabled(enabled);
+				}
+
+				// ˆÊ’u
+				Vector3 position = emitter.GetTransform().translate;
+
+				if (ImGui::DragFloat3("Position", &position.x, 0.05f)) {
+					emitter.SetPosition(position);
+				}
+
+				// ”­¶”
+				int count = static_cast<int>(emitter.GetCount());
+
+				if (ImGui::SliderInt("Emit Count", &count, 0, 100)) {
+					emitter.SetCount(static_cast<uint32_t>(count));
+				}
+
+				// ”­¶•p“x
+				float frequency = emitter.GetFrequency();
+
+				if (ImGui::DragFloat("Emit Frequency", &frequency, 0.01f, 0.0f, 10.0f)) {
+					emitter.SetFrequency(frequency);
+				}
+
+				// ”­¶İ’è
+				ParticleSpawnSettings &settings = emitter.GetSpawnSettings();
+
+				ImGui::SeparatorText("Spawn Settings");
+
+				// ”­¶ˆÊ’u‚Ìƒ‰ƒ“ƒ_ƒ€•
+				ImGui::DragFloat3("Position Range", &settings.positionRange.x, 0.05f, 0.0f, 100.0f);
+
+				// ‰‘¬“x
+				ImGui::DragFloat3("Base Velocity", &settings.baseVelocity.x, 0.05f, -100.0f, 100.0f);
+
+				// ‘¬“x‚Ìƒ‰ƒ“ƒ_ƒ€•
+				ImGui::DragFloat3("Velocity Range", &settings.velocityRange.x, 0.05f, 0.0f, 100.0f);
+
+				// Šî€F
+				ImGui::ColorEdit4("Base Color", &settings.baseColor.x);
+
+				// F‚Ìƒ‰ƒ“ƒ_ƒ€•
+				ImGui::DragFloat3("Color Range", &settings.colorRange.x, 0.01f, 0.0f, 1.0f);
+
+				// õ–½
+				ImGui::DragFloat("Min Lifetime", &settings.minLifetime, 0.05f, 0.01f, 30.0f);
+
+				// Å‘åõ–½
+				ImGui::DragFloat("Max Lifetime", &settings.maxLifetime, 0.05f, 0.01f, 30.0f);
+
+				// Å¬õ–½‚ªÅ‘åõ–½‚ğ’´‚¦‚È‚¢‚æ‚¤‚É‚·‚é
+				if (settings.minLifetime > settings.maxLifetime) {
+					settings.maxLifetime = settings.minLifetime;
+				}
+
+				// ƒGƒ~ƒbƒ^[‚Ìíœ
+				if (ImGui::Button("Delete Emitter")) {
+					shouldDelete = true;
+				}
+
+				ImGui::TreePop();
+			}
+
+			ImGui::PopID();
+
+			if (shouldDelete) {
+				// GPU‚ªƒŠƒ\[ƒX‚ğg‚¢I‚í‚Á‚Ä‚©‚ç”jŠü‚·‚é
+				directXCore->WaitForGPU();
+
+				emitterInstances.erase(emitterInstances.begin() + emitterIndex);
+
+				break;
+			}
+		}
+
 
 		ImGui::SeparatorText("Model Create");
 
@@ -2013,7 +2320,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			newObjectTransform.scale = {1.0f, 1.0f, 1.0f};
 			newObjectTransform.rotate = {0.0f, 0.0f, 0.0f};
 
-			// ç”Ÿæˆã™ã‚‹ãŸã³ã«å°‘ã—æ¨ªã¸ãšã‚‰ã™
+			// ¶¬‚·‚é‚½‚Ñ‚É­‚µ‰¡‚Ö‚¸‚ç‚·
 			newObjectTransform.translate = {static_cast<float>(objectInstances.size()) * 1.5f, 0.0f, 0.0f};
 
 			objectInstances.push_back(CreateObject3DInstance(device, selectedModelIndex, newObjectTransform));
@@ -2090,7 +2397,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		#endif // USE_IMGUI
 
-		// ãƒ©ã‚¤ãƒ†ã‚£ãƒ³ã‚°ã‚¿ã‚¤ãƒ—ã®é©ç”¨
+		// ƒ‰ƒCƒeƒBƒ“ƒOƒ^ƒCƒv‚Ì“K—p
 		materialData->lightingType = lightingType;
 
 
@@ -2101,7 +2408,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
 
 			object.wvpData->WVP = worldViewProjectionMatrix;
-			object.wvpData->World = worldMatrix;
+			object.wvpData->world = worldMatrix;
 
 			object.materialData->color = object.color;
 			object.materialData->lightingType = object.lightingType;
@@ -2113,35 +2420,58 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			object.materialData->uvTransform = objectUvTransformMatrix;
 		}
 
-			// ===========================================================
-			// Particleã®æ›´æ–°å‡¦ç†
-			// ===========================================================
+		// ‚·‚×‚Ä‚ÌEmitter‚ğXV
+		for (EmitterInstance &instance : emitterInstances) {
+			instance.emitter.Update(deltaTime, particleSystem);
+		}
 
-			
-			for (uint32_t i = 0; i < kNumInstance; ++i) {
-				// é€Ÿåº¦ã®åæ˜ 
-				particles[i].transform.translate += particles[i].velocty * kDeltaTime;
+		// ƒJƒƒ‰‚Ì‰ñ“]s—ñ‚ğæ“¾
+		const Matrix4x4 &cameraMatrix = debugCamera->GetCameraRotationMatrix();
 
-				// å„ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã®Transformã‚’è¡Œåˆ—ã«å¤‰æ›ã™ã‚‹
-				// Worldè¡Œåˆ—
-				Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(particles[i].transform);
+		// ƒp[ƒeƒBƒNƒ‹‚ÌXV
+		particleSystem.Update(deltaTime, debugCamera->GetViewProjectionMatrix(), cameraMatrix, instancingData);
 
-				// WorldViewProjectionè¡Œåˆ—
-				Matrix4x4 worldViewProjectionMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
+		// ‚·‚×‚Ä‚ÌEmitter‚ÌƒƒCƒ„[ƒtƒŒ[ƒ€‚ğXV
+		for (EmitterInstance &instance : emitterInstances) {
 
-				// Instancingç”¨Resourceã«æ›¸ãè¾¼ã‚€
-				instancingData[i].WVP = worldViewProjectionMatrix;
-				instancingData[i].World = worldMatrix;
-			}
+			// Emitter‚Ì¶¬İ’è
+			const ParticleSpawnSettings &settings = instance.emitter.GetSpawnSettings();
 
-			// Spriteç”¨ã®WorldViewProjectionMatrixã‚’ä½œã‚‹
-			Matrix4x4 worldMatrixSprite = Matrix4x4::MakeAffineMatrix(transformSprite);
-			Matrix4x4 viewMatrixSprite = Matrix4x4::MakeIdentity4x4();
-			Matrix4x4 projectionMatrixSprite = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f, float(Window::kClientWidth), float(Window::kClientHeight), 0.0f, 100.0f);
-			Matrix4x4 worldViewProjectionMatrixSprite = Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
+			// Emitter‚ÌTransform
+			const Transform &emitterTransform = instance.emitter.GetTransform();
+
+			// ƒƒCƒ„[ƒtƒŒ[ƒ€‚ÌTransform
+			Transform wireTransform{};
+
+			// ¶¬”ÍˆÍ‚ğScale‚É”½‰f
+			wireTransform.scale = settings.positionRange;
+
+			// Œ»İ‚ÍAABB‚È‚Ì‚Å‰ñ“]‚È‚µ
+			wireTransform.rotate = {0.0f, 0.0f, 0.0f};
+
+			// Emitter‚ÌˆÊ’u‚ğ’†S‚É‚·‚é
+			wireTransform.translate = emitterTransform.translate;
+
+			// Worlds—ñ
+			Matrix4x4 worldMatrix = Matrix4x4::MakeAffineMatrix(wireTransform);
+
+			// WVPs—ñ
+			Matrix4x4 wvpMatrix = Matrix4x4::Multiply(worldMatrix, debugCamera->GetViewProjectionMatrix());
+
+			// Emitter‚²‚Æ‚ÌGPUƒŠƒ\[ƒX‚Ö‘‚«‚Ş
+			instance.wvpData->world = worldMatrix;
+			instance.wvpData->WVP = wvpMatrix;
+		}
+
+
+		// Sprite—p‚ÌWorldViewProjectionMatrix‚ğì‚é
+		Matrix4x4 worldMatrixSprite = Matrix4x4::MakeAffineMatrix(transformSprite);
+		Matrix4x4 viewMatrixSprite = Matrix4x4::MakeIdentity4x4();
+		Matrix4x4 projectionMatrixSprite = Matrix4x4::MakeOrthographicMatrix(0.0f, 0.0f, float(Window::kClientWidth), float(Window::kClientHeight), 0.0f, 100.0f);
+		Matrix4x4 worldViewProjectionMatrixSprite = Matrix4x4::Multiply(worldMatrixSprite, Matrix4x4::Multiply(viewMatrixSprite, projectionMatrixSprite));
 
 		transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
-		transformationMatrixDataSprite->World = worldMatrixSprite;
+		transformationMatrixDataSprite->world = worldMatrixSprite;
 
 		Matrix4x4 uvTransformMatrix = Matrix4x4::MakeScaleMatrix(uvTransformSprite.scale);
 		uvTransformMatrix = Matrix4x4::Multiply(uvTransformMatrix, Matrix4x4::MakeRotateZMatrix(uvTransformSprite.rotate.z));
@@ -2149,36 +2479,36 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		materialDataSprite->uvTransform = uvTransformMatrix;
 
-		// Lightã®æ–¹å‘ã¯æ­£è¦åŒ–ã—ã¦ãŠã
+		// Light‚Ì•ûŒü‚Í³‹K‰»‚µ‚Ä‚¨‚­
 		directionalLightData->direction = Vector3::Normalize(directionalLightData->direction);
 
 
 		#ifdef USE_IMGUI
 
-		// ImGuiã®å†…éƒ¨ã‚³ãƒãƒ³ãƒ‰ã‚’ç”Ÿæˆã™ã‚‹
+		// ImGui‚Ì“à•”ƒRƒ}ƒ“ƒh‚ğ¶¬‚·‚é
 		ImGui::Render();
 
 		#endif // USE_IMGUI
 
 
 		//
-		// æ›´æ–°å‡¦ç†çµ‚äº†
+		// XVˆ—I—¹
 		//
 
 
 
 		// ===========================================================
-		// ã“ã“ã¾ã§ã‚²ãƒ¼ãƒ ã®å‡¦ç†
+		// ‚±‚±‚Ü‚ÅƒQ[ƒ€‚Ìˆ—
 		// ===========================================================
 
 
-		// æç”»å‰å‡¦ç†
+		// •`‰æ‘Oˆ—
 		directXCore->PreDraw();
 
-		// RootSignatureã‚’è¨­å®šã€‚PSOã«è¨­å®šã—ã¦ã„ã‚‹ã‘ã©åˆ¥é€”è¨­å®šãŒå¿…è¦
+		// RootSignature‚ğİ’èBPSO‚Éİ’è‚µ‚Ä‚¢‚é‚¯‚Ç•Ê“rİ’è‚ª•K—v
 		commandList->SetGraphicsRootSignature(rootSignature.Get());
 
-		// å½¢çŠ¶ã‚’è¨­å®šã€‚PSOã«è¨­å®šã—ã¦ã„ã‚‹ã‚‚ã®ã¨ã¯ã¾ãŸåˆ¥ã€‚åŒã˜ã‚‚ã®ã‚’è¨­å®šã™ã‚‹ã¨è€ƒãˆã¦ãŠã‘ã°è‰¯ã„
+		// Œ`ó‚ğİ’èBPSO‚Éİ’è‚µ‚Ä‚¢‚é‚à‚Ì‚Æ‚Í‚Ü‚½•ÊB“¯‚¶‚à‚Ì‚ğİ’è‚·‚é‚Æl‚¦‚Ä‚¨‚¯‚Î—Ç‚¢
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 		for (Object3DInstance &object : objectInstances) {
@@ -2187,16 +2517,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			assert(0 <= object.blendMode);
 			assert(object.blendMode < BLEND_MODE_COUNT);
 
-			// BlendModeã”ã¨ã«PSOã‚’åˆ‡ã‚Šæ›¿ãˆã‚‹
+			// BlendMode‚²‚Æ‚ÉPSO‚ğØ‚è‘Ö‚¦‚é
 			commandList->SetPipelineState(graphicsPipelineStates[object.blendMode].Get());
 
-			// ãƒ¢ãƒ‡ãƒ«ç”¨Materialã‚’è¨­å®š
+			// ƒ‚ƒfƒ‹—pMaterial‚ğİ’è
 			commandList->SetGraphicsRootConstantBufferView(0, object.materialResource->GetGPUVirtualAddress());
 
-			// ãƒ¢ãƒ‡ãƒ«ç”¨WVPã‚’è¨­å®š
+			// ƒ‚ƒfƒ‹—pWVP‚ğİ’è
 			commandList->SetGraphicsRootConstantBufferView(1, object.wvpResource->GetGPUVirtualAddress());
 
-			// DirectionalLightã‚’è¨­å®š
+			// DirectionalLight‚ğİ’è
 			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 
 			for (MeshResource &mesh : model.meshes) {
@@ -2206,93 +2536,103 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 				commandList->IASetVertexBuffers(0, 1, &mesh.vertexBufferView);
 
-				// Meshã”ã¨ã«ãƒãƒ†ãƒªã‚¢ãƒ«ã€ä»Šå›ã¯ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’åˆ‡ã‚Šæ›¿ãˆã‚‹
+				// Mesh‚²‚Æ‚Éƒ}ƒeƒŠƒAƒ‹A¡‰ñ‚ÍƒeƒNƒXƒ`ƒƒ‚ğØ‚è‘Ö‚¦‚é
 				commandList->SetGraphicsRootDescriptorTable(2, material.textureSrvHandleGPU);
 
-				// æç”»
+				// •`‰æ
 				commandList->DrawInstanced(UINT(mesh.vertices.size()), 1, 0, 0);
 			}
 		}
 
-			// ===========================================================
-			// Particleã®æç”»å‡¦ç†
-			// ===========================================================
 
-			// Particleç”¨RootSignatureã‚’è¨­å®š
-			commandList->SetGraphicsRootSignature(particleRootSignature.Get());
+		// Particle‚Ì•`‰æˆ—
+		particleSystem.Draw(particleDrawContext);
 
-			// Particleç”¨PSOã‚’è¨­å®š
-			commandList->SetPipelineState(particlePipelineState.Get());
 
-			// ä¸‰è§’å½¢ã¨ã—ã¦æç”»
-			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		// ===========================================================
+		// Emitter‚Ì”ÍˆÍ‚ğƒƒCƒ„[ƒtƒŒ[ƒ€‚Å•`‰æ
+		// ===========================================================
 
-			// Particleç”¨VertexBufferã‚’è¨­å®š
-			commandList->IASetVertexBuffers(0, 1, &particleMeshResource.vertexBufferView);
+		if (showEmitterBounds && !emitterInstances.empty()) {
 
-			// Materialç”¨CBVã‚’è¨­å®š
-			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
-
-			// Instancingç”¨StructuredBufferã®SRVã‚’è¨­å®š
-			commandList->SetGraphicsRootDescriptorTable(1, instancingSrvHandleGPU);
-
-			// Textureç”¨SRVã‚’è¨­å®š
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-
-			// 6é ‚ç‚¹ã®å››è§’å½¢ã‚’10å€‹åˆ†Instancingæç”»
-			commandList->DrawInstanced(UINT(particleMeshResource.vertices.size()), kNumInstance, 0, 0);
-
-			// Spriteæç”»ç”¨ã«RootSignatureã‚’æˆ»ã™
+			// ‘SEmitter‚Å‹¤’Ê‚Ì•`‰æİ’è
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
 
-			// Spriteç”¨BlendModeã‚’Normalã«æˆ»ã™
-			commandList->SetPipelineState(graphicsPipelineStates[BLEND_MODE_NORMAL].Get());
+			commandList->SetPipelineState(emitterLinePipelineState.Get());
 
-		// Spriteç”¨Textureã‚’uvCheckerã«æˆ»ã™
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+
+			commandList->IASetVertexBuffers(0, 1, &emitterWireMeshResource.vertexBufferView);
+
+			commandList->SetGraphicsRootConstantBufferView(0, emitterWireMaterialResource->GetGPUVirtualAddress());
+
+			commandList->SetGraphicsRootDescriptorTable(2, white1x1TextureSrvHandleGPU);
+
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+
+			// Emitter‚²‚Æ‚ÉˆÙ‚È‚éWVP‚Å•`‰æ
+			for (const EmitterInstance &instance : emitterInstances) {
+
+				commandList->SetGraphicsRootConstantBufferView(1, instance.wvpResource->GetGPUVirtualAddress());
+
+				commandList->DrawInstanced(static_cast<UINT>(emitterWireMeshResource.vertices.size()), 1, 0, 0);
+			}
+		}
+
+
+		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		// Sprite•`‰æ—p‚ÉRootSignature‚ğ–ß‚·
+		commandList->SetGraphicsRootSignature(rootSignature.Get());
+
+		// Sprite—pBlendMode‚ğNormal‚É–ß‚·
+		commandList->SetPipelineState(graphicsPipelineStates[BLEND_MODE_NORMAL].Get());
+
+		// Sprite—pTexture‚ğuvChecker‚É–ß‚·
 		commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
 
-		// Spriteç”¨Materialã«åˆ‡ã‚Šæ›¿ãˆã‚‹
+		// Sprite—pMaterial‚ÉØ‚è‘Ö‚¦‚é
 		commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
 
-		// Spriteã®æç”»ã€‚å¤‰æ›´ãŒå¿…è¦ãªã‚‚ã®ã ã‘å¤‰æ›´ã™ã‚‹
-		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite); // VBVã‚’è¨­å®š
+		// Sprite‚Ì•`‰æB•ÏX‚ª•K—v‚È‚à‚Ì‚¾‚¯•ÏX‚·‚é
+		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite); // VBV‚ğİ’è
 		commandList->IASetIndexBuffer(&indexBufferViewSprite);
 
-		// TransformationMatrixCBufferã®å ´æ‰€ã‚’è¨­å®š
+		// TransformationMatrixCBuffer‚ÌêŠ‚ğİ’è
 		commandList->SetGraphicsRootConstantBufferView(
 			1,
 			transformationMatrixResourceSprite->GetGPUVirtualAddress()
 		);
 
-		// æç”»
+		// •`‰æ
 		commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
 
 		#ifdef USE_IMGUI
 
-		// å®Ÿéš›ã®commandListã®ImGuiã®æç”»ã‚³ãƒãƒ³ãƒ‰ã‚’ç©ã‚€
+		// ÀÛ‚ÌcommandList‚ÌImGui‚Ì•`‰æƒRƒ}ƒ“ƒh‚ğÏ‚Ş
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
 
 		#endif // USE_IMGUI
 
 
-		// æç”»å¾Œå‡¦ç†
+		// •`‰æŒãˆ—
 		directXCore->PostDraw();
 	}
 
 	#ifdef USE_IMGUI
 
-	// ImGuiã®çµ‚äº†å‡¦ç†
+	// ImGui‚ÌI—¹ˆ—
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
 
 	#endif // USE_IMGUI
 
-	// XAudio2è§£æ”¾
+	// XAudio2‰ğ•ú
 	xAudio2.Reset();
 
-	// éŸ³å£°ãƒ‡ãƒ¼ã‚¿è§£æ”¾
+	// ‰¹ºƒf[ƒ^‰ğ•ú
 	SoundUnload(&soundData1);
 
 	Log(log, ConvertString(std::format(L"\nlog\n")));

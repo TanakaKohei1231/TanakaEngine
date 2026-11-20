@@ -11,6 +11,10 @@ class DebugCamera {
 
 	const Matrix4x4 &GetViewProjectionMatrix() const { return viewProjectionMatrix_; }
 
+	// カメラの回転行列を取得
+	const Matrix4x4 &GetCameraRotationMatrix() const { return matRot_; }
+
+
   private:
 
 	// ローカル回転角
