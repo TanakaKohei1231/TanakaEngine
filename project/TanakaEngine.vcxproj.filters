@@ -40,7 +40,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
-      </ClCompile>
+    </ClCompile>
     <ClCompile Include="engine\math\Vector3.cpp">
       <Filter>engine\math</Filter>
     </ClCompile>
@@ -92,6 +92,9 @@
     <ClCompile Include="engine\debug\DirectXResourceLeakChecker.cpp">
       <Filter>engine\debug</Filter>
     </ClCompile>
+    <ClCompile Include="Ease.cpp" />
+    <ClCompile Include="ParticleEmitter.cpp" />
+    <ClCompile Include="ParticleSystem.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="resources\shaders\Object3d.VS.hlsl">
@@ -162,6 +165,9 @@
     <ClInclude Include="engine\debug\DirectXResourceLeakChecker.h">
       <Filter>engine\debug</Filter>
     </ClInclude>
+    <ClInclude Include="Ease.h" />
+    <ClInclude Include="ParticleEmitter.h" />
+    <ClInclude Include="ParticleSystem.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">

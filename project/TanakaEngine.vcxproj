@@ -187,12 +187,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</WholeProgramOptimization>
     </ClCompile>
     <ClCompile Include="engine\math\Matrix4x4.cpp" />
-        <ClCompile Include="ParticleEmitter.cpp" />
+    <ClCompile Include="ParticleEmitter.cpp" />
     <ClCompile Include="ParticleSystem.cpp" />
     <ClCompile Include="engine\utility\StringUtility.cpp" />
     <ClCompile Include="engine\math\Vector2.cpp" />
     <ClCompile Include="engine\math\Vector3.cpp" />
-        <ClCompile Include="Vector4.cpp" />
     <ClCompile Include="engine\platform\Window.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -227,7 +226,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="engine\camera\DebugCamera.h" />
     <ClInclude Include="engine\graphics\DirectXCore.h" />
     <ClInclude Include="engine\debug\DirectXResourceLeakChecker.h" />
-        <ClInclude Include="Ease.h" />
+    <ClInclude Include="Ease.h" />
     <ClInclude Include="externals\imgui\imconfig.h" />
     <ClInclude Include="externals\imgui\imgui.h" />
     <ClInclude Include="externals\imgui\imgui_impl_dx12.h" />
@@ -239,12 +238,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="engine\input\Input.h" />
     <ClInclude Include="engine\utility\Logger.h" />
     <ClInclude Include="engine\math\Matrix4x4.h" />
-        <ClInclude Include="ParticleEmitter.h" />
+    <ClInclude Include="ParticleEmitter.h" />
     <ClInclude Include="ParticleSystem.h" />
     <ClInclude Include="engine\utility\StringUtility.h" />
     <ClInclude Include="engine\math\Vector2.h" />
     <ClInclude Include="engine\math\Vector3.h" />
-        <ClInclude Include="Vector4.h" />
     <ClInclude Include="engine\platform\Window.h" />
   </ItemGroup>
   <ItemGroup>
